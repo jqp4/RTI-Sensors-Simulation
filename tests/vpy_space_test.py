@@ -32,11 +32,17 @@ def main():
     planet3 = vp.sphere(pos=vp.vector(0, -3.5, 2), radius=0.1, color=vp.vector(1, 0, 1),
                         mass = 10, momentum=vp.vector(160, 0, 0), make_trail=True)
 
+    l1 = vp.label(pos=planet1.pos,
+                  text='planet1', xoffset=20,
+                  yoffset=50, space=30,
+                  height=16, border=4,
+                  font='sans')
+
     t = 0
     dt = 0.0001 #The step size. This should be a small number
 
     while (True):
-        vp.rate(30000) # обратно sleep
+        vp.rate(1000) # обратно sleep
         
         # Calculte the force using gravitationalForce function
         star.force = gravitationalForce(star,planet1)+gravitationalForce(star,planet2)+gravitationalForce(star,planet3)
@@ -54,6 +60,8 @@ def main():
         planet1.pos = planet1.pos + planet1.momentum/planet1.mass*dt
         planet2.pos = planet2.pos + planet2.momentum/planet2.mass*dt
         planet3.pos = planet3.pos + planet3.momentum/planet3.mass*dt
+
+        l1.pos=planet1.pos
         
         t += dt
 

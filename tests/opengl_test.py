@@ -1,3 +1,4 @@
+# https://habr.com/ru/post/246625/
 # Импортируем все необходимые библиотеки:
 from OpenGL.GL import *
 from OpenGL.GLU import *
