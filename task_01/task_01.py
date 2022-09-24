@@ -1,4 +1,6 @@
 import vpython as vp
+import sympy as sy
+import math
 
 
 def vp_init():
@@ -111,16 +113,19 @@ class World:
 class Sensor:
     # name = 'sensor'
     # pos = vp.vector(1, 0, 0),
-    def __init__(self, name, pos):
+    def __init__(self, name, trajectory):
         self.name = name
+        self.trajectory = trajectory
         self.size = 0.1
 
-        self.create_vp_object(pos)
+        self.create_vp_object()
         self.create_label()
 
-    def create_vp_object(self, pos):
+    def create_vp_object(self):
+        x, y, z = self.trajectory.get_xyz()
+        
         self.vp_obj = vp.sphere(
-            pos=pos,
+            pos=vp.vector(x, y, z),
             radius=self.size / 2,
             color=vp.color.green,
             mass=1,
@@ -144,19 +149,62 @@ class Sensor:
         self.vp_label.pos = self.vp_obj.pos
 
 
+class Circle_Trajectory:
+    def __init__(self):
+        self.t = 0.0
+        self.R = 1.0
+        self.deg_to_rad = lambda deg: deg * sy.pi / 180.0
+        self.get_curve_length()
+
+    def get_curve_length(self):
+        f1 = lambda t: sy.sqrt(
+            self.derivative_f_x(t) ** 2
+            + self.derivative_f_y(t) ** 2
+            + self.derivative_f_z(t) ** 2
+        )
+
+        t_symb = sy.Symbol("t")
+        self.curve_length = sy.N(sy.integrate(f1(t_symb), (t_symb, 0, math.pi * 2)))
+    
+    def get_xyz(self) -> tuple:
+        return (self.f_x(self.t), self.f_y(self.t), self.f_z(self.t))
+
+    def f_x(self, t) -> float:
+        return self.R * sy.cos(self.deg_to_rad(t))
+
+    def f_y(self, t) -> float:
+        return self.R * sy.sin(self.deg_to_rad(t))
+
+    def f_z(self, t) -> float:
+        return 0
+
+    def derivative_f_x(self, t) -> float:
+        return -self.R * sy.sin(self.deg_to_rad(t))
+
+    def derivative_f_y(self, t) -> float:
+        return self.R * sy.cos(self.deg_to_rad(t))
+
+    def derivative_f_z(self, t) -> float:
+        return 0
+
+
 def main():
     vp_init()
+
+    tr = Circle_Trajectory()
+    print(tr.curve_length)
 
     world = World()
     world.create_xy_grid(4, 1)
 
-    star = Sensor("Sun", vp.vector(0, 0, 0))
+    star = Sensor("Sun", tr)
+    star.vp_obj.pos = vp.vector(0, 0, 0)
     star.vp_obj.mass = 1000
     star.vp_obj.radius = 0.2
     star.vp_obj.color = vp.color.yellow
     star.vp_obj.momentum = vp.vector(0, 0, 0)
 
-    planet1 = Sensor("planet_1", vp.vector(1, 0, 0))
+    planet1 = Sensor("planet_1", tr)
     planet1.vp_obj.momentum = vp.vector(0, 30, 0)
 
     t = 0

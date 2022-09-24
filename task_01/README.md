@@ -1,8 +1,19 @@
 # Задача 1
 дедлайн: пн, 26.09.2022
 
-# Заметки
+
+# Заметки к коду
+* vp examples https://www.glowscript.org/#/user/GlowScriptDemos/folder/Examples/
 * vp.label https://www.glowscript.org/docs/VPythonDocs/label.html
+* build grid https://youtu.be/c-abpp3xS2Y
+* vp.scene control https://www.youtube.com/watch?v=9X1taTrS7Ng
+* sy.integrate https://www.geeksforgeeks.org/how-to-find-definite-integral-using-python/
+
+
+# Заметки к отчету
+* Параметрическое задание кривой https://lfirmal.com/parametricheskoe-zadanie-krivoj/
+* Длина дуги кривой, заданной в параметрическом виде https://portal.tpu.ru/SHARED/k/KONVAL/Sites/Russian_sites/Calc1-ru/12/22a.htm
+* 
 
 
 # Плейлисты лекций

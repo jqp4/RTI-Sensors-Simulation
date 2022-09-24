@@ -5,3 +5,4 @@ python3 -m venv rti_venv
 
 pip3 install vpython
 pip3 install Black
+pip3 install sympy
