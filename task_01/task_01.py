@@ -1,21 +1,17 @@
 import vpython as vp
 import sympy as sy
 import math
+import enum
+import random
+
+global double_pi
+double_pi = 6.283185307179586476
 
 
 def vp_init():
     vp.scene.title = "РТИ АСПД. Визуализация движения сенсоров"
     vp.scene.height = 600
     vp.scene.width = 800
-
-
-def gravitationalForce(p1, p2):
-    G = 1  # real-world value is : G = 6.67e-11
-    rVector = p1.pos - p2.pos
-    rMagnitude = vp.mag(rVector)
-    rHat = rVector / rMagnitude
-    F = -rHat * G * p1.mass * p2.mass / rMagnitude**2
-    return F
 
 
 class World:
@@ -110,51 +106,89 @@ class World:
         )
 
 
-class Sensor:
-    # name = 'sensor'
-    # pos = vp.vector(1, 0, 0),
-    def __init__(self, name, trajectory):
-        self.name = name
-        self.trajectory = trajectory
-        self.size = 0.1
+class Sensor_Type(enum.Enum):
+    static = 0.0
+    trajectory = 1.0
 
-        self.create_vp_object()
+
+class Sensor:
+    def __init__(
+        self,
+        name="Untitled sensor",
+        sensor_type=Sensor_Type.static,
+        pos0=vp.vector(0, 0, 0),
+        trajectory=None,
+        t0_degree=0.0,
+        speed=0,
+    ):
+        self.name = name
+        self.sensor_type = sensor_type
+
+        if self.sensor_type == Sensor_Type.trajectory:
+            self.size = 2
+            self.speed = speed
+            self.t_degree = t0_degree
+            self.color = vp.color.green
+            self.trajectory = trajectory
+            self.lap_time = trajectory.curve_length / self.speed
+            # self.dt_degree = self.lap_time * dt
+            self.dt_degree = dt / self.lap_time * 100
+            print(f"t_degree = {self.t_degree}")
+            self.create_vp_object(self.get_vp_pos())
+        elif self.sensor_type == Sensor_Type.static:
+            self.size = 5
+            self.color = vp.color.yellow
+            self.create_vp_object(pos0)
+
         self.create_label()
 
-    def create_vp_object(self):
-        x, y, z = self.trajectory.get_xyz()
-        
+    def create_vp_object(self, pos):
+        # print(pos)
         self.vp_obj = vp.sphere(
-            pos=vp.vector(x, y, z),
+            pos=pos,
             radius=self.size / 2,
-            color=vp.color.green,
-            mass=1,
-            # momentum=vp.vector(0, 30, 0),
+            color=self.color,
             make_trail=True,
         )
+
+    def get_vp_pos(self) -> vp.vector:
+        x, y, z = self.trajectory.get_xyz(self.t_degree)
+        return vp.vector(x, y, z)
 
     def create_label(self):
         self.vp_label = vp.label(
             pos=self.vp_obj.pos,
             text=self.name,
+            font="sans",
             xoffset=20,
             yoffset=50,
-            space=20,
             height=16,
             border=4,
-            font="sans",
+            space=20,
         )
 
     def update_label(self):
         self.vp_label.pos = self.vp_obj.pos
 
+    def take_step(self):
+        if self.sensor_type == Sensor_Type.trajectory:
+            self.t_degree += self.dt_degree
+            self.vp_obj.pos = self.get_vp_pos()
+
+    def delete(self):
+        self.vp_obj.delete()
+        self.label.delete()
+
 
 class Circle_Trajectory:
-    def __init__(self):
-        self.t = 0.0
-        self.R = 1.0
+    def __init__(self, R, x0, y0, z0):
+        self.R = R
+        self.x0 = x0
+        self.y0 = y0
+        self.z0 = z0
         self.deg_to_rad = lambda deg: deg * sy.pi / 180.0
         self.get_curve_length()
+        print(f"Trajectory curve length = {self.curve_length}")
 
     def get_curve_length(self):
         f1 = lambda t: sy.sqrt(
@@ -165,9 +199,9 @@ class Circle_Trajectory:
 
         t_symb = sy.Symbol("t")
         self.curve_length = sy.N(sy.integrate(f1(t_symb), (t_symb, 0, math.pi * 2)))
-    
-    def get_xyz(self) -> tuple:
-        return (self.f_x(self.t), self.f_y(self.t), self.f_z(self.t))
+
+    def get_xyz(self, t) -> tuple:
+        return (self.x0 + self.f_x(t), self.y0 + self.f_y(t), self.z0 + self.f_z(t))
 
     def f_x(self, t) -> float:
         return self.R * sy.cos(self.deg_to_rad(t))
@@ -191,47 +225,34 @@ class Circle_Trajectory:
 def main():
     vp_init()
 
-    tr = Circle_Trajectory()
-    print(tr.curve_length)
+    global dt
+    dt = 0.0001  # The step size. This should be a small number
+    rate = 2000
+    t = 0
 
     world = World()
-    world.create_xy_grid(4, 1)
+    world.create_xy_grid(40, 10)
 
-    star = Sensor("Sun", tr)
-    star.vp_obj.pos = vp.vector(0, 0, 0)
-    star.vp_obj.mass = 1000
-    star.vp_obj.radius = 0.2
-    star.vp_obj.color = vp.color.yellow
-    star.vp_obj.momentum = vp.vector(0, 0, 0)
+    base1 = Sensor("static sensor")
 
-    planet1 = Sensor("planet_1", tr)
-    planet1.vp_obj.momentum = vp.vector(0, 30, 0)
-
-    t = 0
-    dt = 0.0001  # The step size. This should be a small number
+    s1 = Sensor(
+        name="pp1",
+        sensor_type=Sensor_Type.trajectory,
+        trajectory=Circle_Trajectory(5, 5, 5, 5),
+        t0_degree=random.randint(0, 359),
+        speed=600,
+    )
 
     while True:
-        vp.rate(1000)  # обратно sleep
+        vp.rate(rate)  # скорость показа, обратно sleep
 
-        # Calculte the force using gravitationalForce function
-        star.vp_obj.force = gravitationalForce(star.vp_obj, planet1.vp_obj)
-        planet1.vp_obj.force = gravitationalForce(planet1.vp_obj, star.vp_obj)
+        s1.take_step()
 
-        # Update momentum, position and time
-        star.vp_obj.momentum = star.vp_obj.momentum + star.vp_obj.force * dt
-        planet1.vp_obj.momentum = planet1.vp_obj.momentum + planet1.vp_obj.force * dt
-
-        star.vp_obj.pos = star.vp_obj.pos + star.vp_obj.momentum / star.vp_obj.mass * dt
-        planet1.vp_obj.pos = (
-            planet1.vp_obj.pos + planet1.vp_obj.momentum / planet1.vp_obj.mass * dt
-        )
-
-        star.update_label()
-        planet1.update_label()
+        base1.update_label()
+        s1.update_label()
 
         t += dt
-
-        # print(vp.scene.camera.pos, '    ',vp.scene.axis)
+        vp.scene.caption = f"t = {t / dt}"
 
 
 main()
