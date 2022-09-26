@@ -4,12 +4,12 @@ import math
 import enum
 import random
 
-global double_pi
-double_pi = 6.283185307179586476
+# global double_pi
+# double_pi = 6.283185307179586476
 
 
 def vp_init():
-    vp.scene.title = "РТИ АСПД. Визуализация движения сенсоров"
+    # vp.scene.title = "РТИ АСПД. Визуализация движения сенсоров"
     vp.scene.height = 600
     vp.scene.width = 800
 
@@ -125,7 +125,7 @@ class Sensor:
         self.sensor_type = sensor_type
 
         if self.sensor_type == Sensor_Type.trajectory:
-            self.size = 2
+            self.size = 1.2
             self.speed = speed
             self.t_degree = t0_degree
             self.color = vp.color.green
@@ -136,14 +136,13 @@ class Sensor:
             print(f"t_degree = {self.t_degree}")
             self.create_vp_object(self.get_vp_pos())
         elif self.sensor_type == Sensor_Type.static:
-            self.size = 5
+            self.size = 3
             self.color = vp.color.yellow
             self.create_vp_object(pos0)
 
         self.create_label()
 
     def create_vp_object(self, pos):
-        # print(pos)
         self.vp_obj = vp.sphere(
             pos=pos,
             radius=self.size / 2,
@@ -226,33 +225,60 @@ def main():
     vp_init()
 
     global dt
-    dt = 0.0001  # The step size. This should be a small number
-    rate = 2000
+    dt = 0.005  # The step size. This should be a small number
+    rate = 1000
     t = 0
 
     world = World()
     world.create_xy_grid(40, 10)
 
-    base1 = Sensor("static sensor")
+    bases = [
+        Sensor(name=f"static sensor #{i}", pos0=pos)
+        for i, pos in enumerate(
+            [
+                vp.vector(-20, -20, 0),
+                vp.vector(-20, 20, 0),
+                vp.vector(20, 20, 0),
+                vp.vector(20, -20, 0),
+            ]
+        )
+    ]
 
-    s1 = Sensor(
-        name="pp1",
-        sensor_type=Sensor_Type.trajectory,
-        trajectory=Circle_Trajectory(5, 5, 5, 5),
-        t0_degree=random.randint(0, 359),
-        speed=600,
-    )
+    sensors = [
+        Sensor(
+            name=f"p{i}",
+            sensor_type=Sensor_Type.trajectory,
+            trajectory=tr,
+            t0_degree=random.randint(0, 359),
+            speed=600,
+        )
+        for i, tr in enumerate(
+            [
+                Circle_Trajectory(10, -20, -20, 5),
+                Circle_Trajectory(10, -20, 20, 5),
+                Circle_Trajectory(10, 20, 20, 5),
+                Circle_Trajectory(10, 20, -20, 5),
+                Circle_Trajectory(10, -20, -20, 25),
+                Circle_Trajectory(10, -20, 20, 25),
+                Circle_Trajectory(10, 20, 20, 25),
+                Circle_Trajectory(10, 20, -20, 25),
+            ]
+        )
+    ]
 
     while True:
         vp.rate(rate)  # скорость показа, обратно sleep
 
-        s1.take_step()
+        for base in bases:
+            base.update_label()
 
-        base1.update_label()
-        s1.update_label()
+        for sensor in sensors:
+            sensor.take_step()
+            sensor.update_label()
 
         t += dt
-        vp.scene.caption = f"t = {t / dt}"
+        # vp.scene.caption = f"t = {t / dt}"
+        vp.scene.caption = f"static sensors count: {len(bases)}\ntrajectory sensors count: {len(sensors)}"
 
 
 main()
