@@ -1,7 +1,9 @@
+from perlin_noise import PerlinNoise
 import vpython as vp
 import sympy as sy
 import math
 import enum
+import time
 import random
 
 # global double_pi
@@ -12,6 +14,7 @@ def vp_init():
     # vp.scene.title = "РТИ АСПД. Визуализация движения сенсоров"
     vp.scene.height = 600
     vp.scene.width = 800
+    vp.scene.background = vp.color.white
 
 
 class World:
@@ -20,8 +23,88 @@ class World:
         self.grid = []
         self.grid_labels = []
         self.grid_frame = []
+        self.topographic_map = []
 
         self.font_size = 12
+
+    def get_topographic_map_values(self, size):
+        noise1 = PerlinNoise(octaves=3)
+        noise2 = PerlinNoise(octaves=6)
+        noise3 = PerlinNoise(octaves=12)
+        noise4 = PerlinNoise(octaves=24)
+
+        gain = 10
+        xpix, ypix = size, size  # x - длина по вертикали
+        topographic_map_values = []
+        for i in range(xpix):
+            row = []
+            for j in range(ypix):
+                noise_val = noise1([i / xpix, j / ypix])
+                noise_val += 0.5 * noise2([i / xpix, j / ypix])
+                noise_val += 0.25 * noise3([i / xpix, j / ypix])
+                noise_val += 0.125 * noise4([i / xpix, j / ypix])
+
+                row.append((noise_val) * gain)
+            topographic_map_values.append(row)
+        return topographic_map_values
+
+    def print_topographic_map(self):
+        for row in self.topographic_map:
+            for value in row:
+                print(f"{value:6.3f}", end=", ")
+            print()
+
+    def create_topographic_map(self, radius):
+        step = 2
+        radius = int(radius)
+        tmap_values = self.get_topographic_map_values(size=radius * 2)
+        self.topographic_map = []
+
+        # for x in range(-radius, radius - 1, step):
+        #     for y in range(-radius, radius - 1, step):
+        #         # a = vp.vertex(pos=vp.vector(x, y, tmap_values[x][y]))
+        #         # b = vp.vertex(pos=vp.vector(x + 1, y, tmap_values[x + 1][y]))
+        #         # c = vp.vertex(pos=vp.vector(x, y + 1, tmap_values[x][y + 1]))
+        #         # d = vp.vertex(pos=vp.vector(x + 1, y + 1, tmap_values[x + 1][y + 1]))
+
+        #         # add 2 triangles
+        #         # self.topographic_map.append(vp.triangle(v0=a, v1=b, v2=c))
+        #         # self.topographic_map.append(vp.triangle(v0=c, v1=b, v2=d))
+
+        #         a = vp.vector(x, y, tmap_values[x][y])
+        #         b = vp.vector(x + step, y, tmap_values[x + step][y])
+        #         c = vp.vector(x, y + step, tmap_values[x][y + step])
+        #         self.topographic_map.append(vp.curve(pos=[c, a, b]))
+
+        for x in range(0, radius * 2, step):
+            pos_xy = [
+                vp.vector(x - radius, y - radius, tmap_values[x][y])
+                for y in range(0, radius * 2, step)
+            ]
+            pos_yx = [
+                vp.vector(y - radius, x - radius, tmap_values[y][x])
+                for y in range(0, radius * 2, step)
+            ]
+            
+            self.topographic_map.append(vp.curve(pos=pos_xy))
+            self.topographic_map.append(vp.curve(pos=pos_yx))
+        
+
+        self.create_frame(radius)
+
+    def create_frame(self, radius):
+        # Create map frame
+        fr = radius * 1.06
+        self.grid_frame = vp.curve(
+            pos=[
+                vp.vector(-fr, -fr, 0),
+                vp.vector(fr, -fr, 0),
+                vp.vector(fr, fr, 0),
+                vp.vector(-fr, fr, 0),
+                vp.vector(-fr, -fr, 0),
+            ],
+            color=vp.color.red,
+        )
 
     def create_xy_grid(self, radius, dx):
         # xmax = extent of grid in each direction
@@ -77,22 +160,18 @@ class World:
         )
 
         # Create grid frame
-        fr = radius + 1.5
-        self.grid_frame = vp.curve(
-            pos=[
-                vp.vector(-fr, -fr, 0),
-                vp.vector(fr, -fr, 0),
-                vp.vector(fr, fr, 0),
-                vp.vector(-fr, fr, 0),
-                vp.vector(-fr, -fr, 0),
-            ],
-            color=vp.color.red,
-        )
+        self.create_frame(radius)
 
     def clear_grid(self):
+        for obj in (
+            self.grid + self.grid_labels + self.grid_frame + self.topographic_map
+        ):
+            obj.delete()
+
         self.grid = []
         self.grid_labels = []
         self.grid_frame = []
+        self.topographic_map = []
 
     def grid_label(self, x, y, z, value):
         return vp.label(
@@ -104,6 +183,10 @@ class World:
             box=False,
             font="sans",
         )
+
+    def __delattr__(self):
+        self.clear_grid()
+        super.__delattr__()
 
 
 class Sensor_Type(enum.Enum):
@@ -133,22 +216,31 @@ class Sensor:
             self.lap_time = trajectory.curve_length / self.speed
             # self.dt_degree = self.lap_time * dt
             self.dt_degree = dt / self.lap_time * 100
-            print(f"t_degree = {self.t_degree}")
+            # print(f"t_degree = {self.t_degree}")
             self.create_vp_object(self.get_vp_pos())
         elif self.sensor_type == Sensor_Type.static:
-            self.size = 3
+            self.size = 5
             self.color = vp.color.yellow
             self.create_vp_object(pos0)
 
         self.create_label()
 
     def create_vp_object(self, pos):
-        self.vp_obj = vp.sphere(
-            pos=pos,
-            radius=self.size / 2,
-            color=self.color,
-            make_trail=True,
-        )
+        if self.sensor_type == Sensor_Type.trajectory:
+            self.vp_obj = vp.sphere(
+                pos=pos,
+                radius=self.size / 2,
+                color=self.color,
+                make_trail=True,
+            )
+        elif self.sensor_type == Sensor_Type.static:
+            self.vp_obj = vp.cylinder(
+                pos=pos,
+                axis=vp.vector(0, 0, self.size / 2),
+                radius=self.size / 2,
+                color=self.color,
+                # make_trail=True,
+            )
 
     def get_vp_pos(self) -> vp.vector:
         x, y, z = self.trajectory.get_xyz(self.t_degree)
@@ -174,9 +266,10 @@ class Sensor:
             self.t_degree += self.dt_degree
             self.vp_obj.pos = self.get_vp_pos()
 
-    def delete(self):
+    def __delattr__(self):
         self.vp_obj.delete()
         self.label.delete()
+        super.__delattr__()
 
 
 class Trajectory:
@@ -236,6 +329,9 @@ class Circle_XY_Trajectory(Trajectory):
 
     def derivative_f_y(self, t) -> float:
         return self.R * sy.cos(self.deg_to_rad(t))
+
+    def f_z(self, t) -> float:
+        return self.R * sy.sin(self.deg_to_rad(t * 5)) / 5
 
 
 # криво работает
@@ -340,6 +436,8 @@ class Broken_Line_Trajectory(Trajectory):
 
         p = float(traveled_segment_length / self.segment_lengths[index])
         point = self.points[index] + self.segments[index] * p
+        # z_shift = math.sin(self.deg_to_rad(t * 5))
+        # return (point.x, point.y, point.z + z_shift)
         return (point.x, point.y, point.z)
 
     def get_curve_length(self) -> float:
@@ -349,12 +447,11 @@ class Broken_Line_Trajectory(Trajectory):
 def main():
     vp_init()
     world = World()
-    world.create_xy_grid(40, 10)
+    # world.create_xy_grid(40, 10)
+    world.create_topographic_map(40)
 
     global dt
-    dt = 0.00005  # The step size. This should be a small number
-    rate = 1000
-    t = 0
+    dt = 0.001  # The step size. This should be a small number
 
     bases = [
         Sensor(name=f"static sensor #{i}", pos0=pos)
@@ -379,7 +476,7 @@ def main():
         )
         for i, tr in enumerate(
             [
-                # Circle_XY_Trajectory(10, -20, -20, 5),
+                Circle_XY_Trajectory(10, -20, -20, 8), # первая коорд (-20) это горизонталь
                 # Circle_XY_Trajectory(10, -20, 20, 5),
                 # Circle_XY_Trajectory(10, 20, 20, 5),
                 # Circle_XY_Trajectory(10, 20, -20, 5),
@@ -390,17 +487,22 @@ def main():
                 # Rectangle_XY_Trajectory(20, 0.5)
                 Broken_Line_Trajectory(
                     [
-                        vp.vector(-10, -10, 0),
-                        vp.vector(-10, 10, 0),
-                        vp.vector(10, 10, 0),
+                        vp.vector(10, 10, 8),
+                        vp.vector(10, 30, 8),
+                        vp.vector(20, 30, 15),
+                        vp.vector(30, 30, 8),
+                        vp.vector(30, 10, 8),
                     ]
-                )
+                ),
             ]
         )
     ]
 
+    iteration = 0
+    program_start_time = time.time()
+
     while True:
-        vp.rate(rate)  # скорость показа, обратно sleep
+        cycle_start_time = time.time()
 
         for base in bases:
             base.update_label()
@@ -409,17 +511,25 @@ def main():
             sensor.take_step()
             sensor.update_label()
 
-        t += dt
-        # vp.scene.caption += (
-        # f"t = {t / dt}\n"
-        # + f"static sensors count: {len(bases)}\n"
-        # + f"trajectory sensors count: {len(sensors)}"
-        # + f"\n"
-        # )
+        execution_time = time.time() - cycle_start_time
+        sleep_time = dt - execution_time
+        # print(execution_time, sleep_time)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+
+        iteration += 1
+        vp.scene.caption = (
+            # f"iteration: {iteration}\n"
+            # f"time: {time.time() - program_start_time:.3f} sec\n"
+            # f"avg iteration time: {(time.time() - program_start_time)/iteration:.3f} sec\n"
+            f"time: {time.time() - program_start_time:.3f} sec;   "
+            f"iteration: {iteration};   \n"
+            f"average iteration time: {(time.time() - program_start_time)/iteration:.6f} sec;\n"
+            # f'average time of the last 50 iterations:  '
+            # f"static sensors count: {len(bases)}\n"
+            # f"trajectory sensors count: {len(sensors)}"
+            # f"\n"
+        )
 
 
 main()
-
-# a = vp.vector(1, 1, 1)
-# p = 0.6
-# print(a * p)
