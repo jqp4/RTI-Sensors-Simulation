@@ -85,14 +85,13 @@ class World:
                 vp.vector(y - radius, x - radius, tmap_values[y][x])
                 for y in range(0, radius * 2, step)
             ]
-            
+
             self.topographic_map.append(vp.curve(pos=pos_xy))
             self.topographic_map.append(vp.curve(pos=pos_yx))
-        
 
-        self.create_frame(radius)
+        self.create_frame(radius, True, 10)
 
-    def create_frame(self, radius):
+    def create_frame(self, radius, show_coords=False, dx=None):
         # Create map frame
         fr = radius * 1.06
         self.grid_frame = vp.curve(
@@ -105,6 +104,35 @@ class World:
             ],
             color=vp.color.red,
         )
+
+        if show_coords and (dx != None):
+            for x in range(-radius, radius + dx, dx):
+                # if x != -radius:
+                self.grid_labels.append(
+                    vp.label(
+                        pos=vp.vector(x, fr, 0),
+                        text=f"{radius + x} км",
+                        xoffset=10,
+                        yoffset=25,
+                        height=self.font_size,
+                        box=False,
+                        font="sans",
+                    )
+                )
+
+            for y in range(-radius, radius + dx, dx):
+                # if y != radius:
+                self.grid_labels.append(
+                    vp.label(
+                        pos=vp.vector(-fr, y, 0),
+                        text=f"{radius - y} км",
+                        xoffset=-25,
+                        yoffset=10,
+                        height=self.font_size,
+                        box=False,
+                        font="sans",
+                    )
+                )
 
     def create_xy_grid(self, radius, dx):
         # xmax = extent of grid in each direction
@@ -476,7 +504,10 @@ def main():
         )
         for i, tr in enumerate(
             [
-                Circle_XY_Trajectory(10, -20, -20, 8), # первая коорд (-20) это горизонталь
+                Circle_XY_Trajectory(
+                    10, -20, -20, 8
+                ),  # первая координата (-20) это горизонталь
+                
                 # Circle_XY_Trajectory(10, -20, 20, 5),
                 # Circle_XY_Trajectory(10, 20, 20, 5),
                 # Circle_XY_Trajectory(10, 20, -20, 5),
@@ -485,13 +516,14 @@ def main():
                 # Circle_XY_Trajectory(10, 20, 20, 25),
                 # Circle_XY_Trajectory(10, 20, -20, 25),
                 # Rectangle_XY_Trajectory(20, 0.5)
+                
                 Broken_Line_Trajectory(
                     [
-                        vp.vector(10, 10, 8),
-                        vp.vector(10, 30, 8),
-                        vp.vector(20, 30, 15),
-                        vp.vector(30, 30, 8),
-                        vp.vector(30, 10, 8),
+                        vp.vector(10, -10, 8),
+                        vp.vector(10, -30, 8),
+                        vp.vector(30, -30, 8),
+                        vp.vector(30, -10, 8),
+                        vp.vector(20, -10, 15),
                     ]
                 ),
             ]
