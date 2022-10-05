@@ -1,6 +1,6 @@
 # Задача 1
 
-дедлайн: пн, 26.09.2022
+Моделирование местности с сенсорами, летающими по заданным траекториям
 
 ## Заметки к коду
 
@@ -15,7 +15,8 @@
 * Параметрическое задание кривой <https://lfirmal.com/parametricheskoe-zadanie-krivoj/>
 * Длина дуги кривой, заданной в параметрическом виде <https://portal.tpu.ru/SHARED/k/KONVAL/Sites/Russian_sites/Calc1-ru/12/22a.htm>
 * Параметрические уравнения четырехугольников <http://stob2.narod.ru/zetirexygol/zetirexygol.htm>
-* ссылка на мой документ со схемой <https://app.creately.com/d/FYBaHAgYIfC/edit>
+* Уравнение прямой проходящей через две точки <https://mnogoformul.ru/uravnenie-pryamoj-po-dvum-tochkam>
+* Cсылка на мой документ со схемой <https://app.creately.com/d/FYBaHAgYIfC/edit>
 
 ## Плейлисты лекций
 
