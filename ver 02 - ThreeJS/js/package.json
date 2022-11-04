@@ -1,0 +1,6 @@
+{
+    "devDependencies": {
+        "three": "0.137.5",
+        "meshline": "file:./THREE.MeshLine.js"
+    }
+}
