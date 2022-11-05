@@ -33,6 +33,16 @@ var resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
 var graph = new THREE.Object3D();
 scene.add(graph);
 
+class Field {
+    constructor(width_x, width_z, height_y) {
+        this.width_x = width_x;
+        this.width_z = width_z;
+        this.height_y = height_y;
+    }
+}
+
+var field = new Field(80, 80, 20);
+
 class Params {
     constructor() {
         this.curves = true;
@@ -82,6 +92,44 @@ window.addEventListener("load", function () {
     // });
 });
 
+class TrajectoryByPoints {
+    constructor(points) {
+        this.length = 0;
+        this.sectors = [];
+        this.sector_lengths = [];
+
+        for (let index = 0; index < points.length - 1; index++) {
+            const source = points[index];
+            const target = points[index + 1];
+            const sector = new THREE.Vector3(
+                target.x - source.x,
+                target.y - source.y,
+                target.z - source.z
+            );
+
+            this.sectors.push(sector);
+            this.sector_lengths.push(sector.length());
+            this.length += sector.length();
+        }
+
+        console.log("trajectory length = %d", this.length);
+    }
+}
+
+/// Шаблон летающего сенсора
+class Sensor {
+    constructor() {}
+}
+
+/// Шаблон статичного сенсора
+class StaticSensor {
+    constructor(x, y, z) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+}
+
 init();
 render();
 
@@ -89,6 +137,56 @@ function clearScene() {
     scene.remove(graph);
     graph = new THREE.Object3D();
     scene.add(graph);
+}
+
+function init() {
+    // console.log(jsonData);
+
+    createAxis();
+    createAxisText();
+    creatrLight();
+    // createVertices();
+    // createEdges();
+    createStaticSensors();
+    createFlyingSensors();
+}
+
+function createStaticSensors() {
+    var staticSensors = [];
+    staticSensors.push(new StaticSensor(30, 0, 30));
+    staticSensors.push(new StaticSensor(60, 0, 30));
+
+    for (var index = 0; index < staticSensors.length; index++) {
+        var s = staticSensors[index];
+        createCylinder(s.x, s.y, s.z, 2);
+    }
+}
+
+function createFlyingSensors() {
+    var points = [
+        new THREE.Vector3(10, 10, 10),
+        new THREE.Vector3(40, 10, 10),
+        new THREE.Vector3(40, 10, 40),
+    ];
+
+    var trajectory = new TrajectoryByPoints(points);
+    var flyingSensors = [];
+    flyingSensors.push(new Sensor(trajectory));
+
+    for (var index = 0; index < flyingSensors.length; index++) {
+        var s = flyingSensors[index];
+        // createCylinder(s.x, s.y, s.z, 2);
+    }
+}
+
+function createCylinder(x, y, z, color_index) {
+    const geometry = new THREE.CylinderGeometry(3, 4, 2.5, 16);
+    const material = new THREE.MeshPhongMaterial({
+        color: colors[color_index],
+    });
+    const cylinder = new THREE.Mesh(geometry, material);
+    cylinder.position.set(x, y, z);
+    graph.add(cylinder);
 }
 
 function makeLine(geo, c) {
@@ -105,16 +203,6 @@ function makeLine(geo, c) {
     });
     var mesh = new THREE.Mesh(g.geometry, material);
     graph.add(mesh);
-}
-
-function init() {
-    console.log(jsonData);
-
-    createAxis();
-    createAxisText();
-    creatrLight();
-    createVertices();
-    createEdges();
 }
 
 function createSphere(x, y, z, color_index) {
@@ -207,8 +295,8 @@ function createArrow(sourceVector3, targetVector3) {
     var beta = z == 0 ? (Math.sign(x) * Math.PI) / 2 : Math.atan(x / z); //  поворот вокруг оси OY
     var gamma = x == 0 ? (Math.sign(y) * Math.PI) / 2 : Math.atan(y / x); // поворот вокруг оси OZ
 
-    console.log(x, y, z);
-    console.log(alpha, beta, gamma);
+    // console.log(x, y, z);
+    // console.log(alpha, beta, gamma);
 
     // var len = Math.sqrt(Math.pow(x), Math.pow(y), Math.pow(z));
     // x = x / len;
@@ -278,9 +366,18 @@ function createLines() {
 }
 
 function createAxis() {
-    createArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(60, 0, 0));
-    createArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 60, 0));
-    createArrow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 60));
+    createArrow(
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(field.width_x, 0, 0)
+    );
+    createArrow(
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, field.height_y, 0)
+    );
+    createArrow(
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, field.width_z)
+    );
 
     // куб 0 0 0
     // {
@@ -312,7 +409,6 @@ function textParameters(text, fontSize) {
 
 function createAxisText() {
     const fontSize = 5;
-    const axisPos = axisSize + fontSize;
 
     var parameters_x = textParameters("x", fontSize);
     var parameters_y = textParameters("y", fontSize);
@@ -322,9 +418,9 @@ function createAxisText() {
     var label_y = new THREE.TextSprite(parameters_y);
     var label_z = new THREE.TextSprite(parameters_z);
 
-    label_x.position.set(axisPos, 0, 0);
-    label_y.position.set(0, axisPos, 0);
-    label_z.position.set(0, 0, axisPos);
+    label_x.position.set(field.width_x + fontSize, 0, 0);
+    label_y.position.set(0, field.height_y + fontSize, 0);
+    label_z.position.set(0, 0, field.width_z + fontSize);
 
     graph.add(label_x);
     graph.add(label_y);
