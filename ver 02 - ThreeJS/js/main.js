@@ -45,9 +45,10 @@ var field = new Field(80, 80, 20);
 
 class Params {
     constructor() {
+        this.dl = 1; // Δl
         this.curves = true;
         this.circles = false;
-        this.lineWidth = 10;
+        this.lineWidth = 5;
         this.taper = "parabolic";
         this.strokes = false;
         this.sizeAttenuation = false;
@@ -73,7 +74,8 @@ window.addEventListener("load", function () {
 
     // gui.add(params, "curves").onChange(update);
     // gui.add(params, "circles").onChange(update);
-    gui.add(params, "lineWidth", 1, 20).onChange(update);
+    gui.add(params, "dl", 0.01, 1).onChange(update);
+    gui.add(params, "lineWidth", 1, 15).onChange(update);
     // gui.add(params, "taper", ["none", "linear", "parabolic", "wavy"]).onChange(
     //     update
     // );
@@ -92,27 +94,128 @@ window.addEventListener("load", function () {
     // });
 });
 
+/// https://stackoverflow.com/questions/7486085/copy-array-by-value
+function deepCopy(aObject) {
+    // Prevent undefined objects
+    // if (!aObject) return aObject;
+
+    let bObject = Array.isArray(aObject) ? [] : {};
+
+    let value;
+    for (const key in aObject) {
+        // Prevent self-references to parent object
+        // if (Object.is(aObject[key], aObject)) continue;
+
+        value = aObject[key];
+
+        bObject[key] = typeof value === "object" ? deepCopy(value) : value;
+    }
+
+    return bObject;
+}
+
 class TrajectoryByPoints {
-    constructor(points) {
+    constructor(points, color_index = 1) {
         this.length = 0;
         this.sectors = [];
-        this.sector_lengths = [];
+        this.sectorDirections = [];
+        this.waypoints = [];
+        this.points = points;
+        this.color_index = color_index;
 
-        for (let index = 0; index < points.length - 1; index++) {
-            const source = points[index];
-            const target = points[index + 1];
+        this.calculateSectors();
+        this.calculateWaypoints();
+
+        console.log("trajectory length = %d", this.length);
+        console.log(this.waypoints);
+
+        this.drawTrajectoryLines();
+        this.drawWaypoints();
+    }
+
+    calculateSectors() {
+        let get_index = (index) => (index == this.points.length ? 0 : index);
+
+        for (let index = 0; index < this.points.length; index++) {
+            const source = this.points[get_index(index)];
+            const target = this.points[get_index(index + 1)];
             const sector = new THREE.Vector3(
                 target.x - source.x,
                 target.y - source.y,
                 target.z - source.z
             );
 
-            this.sectors.push(sector);
-            this.sector_lengths.push(sector.length());
             this.length += sector.length();
+            this.sectors.push(sector);
+
+            this.sectorDirections.push(
+                new THREE.Vector3(
+                    sector.x / sector.length(),
+                    sector.y / sector.length(),
+                    sector.z / sector.length()
+                )
+            );
+        }
+    }
+
+    calculateWaypoints() {
+        let len = 0;
+        let n = 0;
+        let lengthNsSectors = 0;
+
+        this.waypoints = [this.points[0]];
+
+        while (len + params.dl < this.length) {
+            len += params.dl;
+
+            while (lengthNsSectors + this.sectors[n].length() < len) {
+                lengthNsSectors += this.sectors[n].length();
+                n += 1;
+            }
+
+            const deltaLen = len - lengthNsSectors;
+            const partOfThisSector = deltaLen / this.sectors[n].length();
+            const sector = this.sectors[n];
+            const point = this.points[n];
+
+            // console.log(n, partOfThisSector);
+
+            this.waypoints.push(
+                new THREE.Vector3(
+                    point.x + sector.x * partOfThisSector,
+                    point.y + sector.y * partOfThisSector,
+                    point.z + sector.z * partOfThisSector
+                )
+            );
+        }
+    }
+
+    drawTrajectoryLines() {
+        for (let index = 0; index < this.points.length; index++) {
+            const point = this.points[index];
+            // createPointCude(point.x, point.y, point.z, this.color_index);
         }
 
-        console.log("trajectory length = %d", this.length);
+        for (let index = 0; index < this.points.length; index++) {
+            const source = this.points[this.get_index(index)];
+            const target = this.points[this.get_index(index + 1)];
+            var line = new THREE.Geometry();
+            line.vertices.push(source);
+            line.vertices.push(target);
+            makeLine(line, this.color_index);
+        }
+    }
+
+    drawWaypoints() {
+        for (let index = 0; index < this.waypoints.length; index++) {
+            const waypoint = this.waypoints[index];
+            createPointCude(
+                waypoint.x,
+                waypoint.y,
+                waypoint.z,
+                this.color_index + 1
+            );
+        }
     }
 }
 
@@ -145,8 +248,6 @@ function init() {
     createAxis();
     createAxisText();
     creatrLight();
-    // createVertices();
-    // createEdges();
     createStaticSensors();
     createFlyingSensors();
 }
@@ -179,6 +280,17 @@ function createFlyingSensors() {
     }
 }
 
+function createPointCude(x, y, z, color_index) {
+    const size = 0.5;
+    const geometry = new THREE.BoxGeometry(size, size, size);
+    const material = new THREE.MeshPhongMaterial({
+        color: colors[color_index],
+    });
+    const cube = new THREE.Mesh(geometry, material);
+    cube.position.set(x, y, z);
+    graph.add(cube);
+}
+
 function createCylinder(x, y, z, color_index) {
     const geometry = new THREE.CylinderGeometry(3, 4, 2.5, 16);
     const material = new THREE.MeshPhongMaterial({
@@ -199,7 +311,7 @@ function makeLine(geo, c) {
         opacity: 1,
         resolution: resolution,
         sizeAttenuation: false,
-        lineWidth: 5,
+        lineWidth: params.lineWidth,
     });
     var mesh = new THREE.Mesh(g.geometry, material);
     graph.add(mesh);
