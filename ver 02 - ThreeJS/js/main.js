@@ -38,14 +38,20 @@ class Field {
         this.width_x = width_x;
         this.width_z = width_z;
         this.height_y = height_y;
+
+        const c = 1.1;
+
+        this.axisLength_x = width_x * c;
+        this.axisLength_z = width_z * c;
+        this.axisLength_y = height_y * c;
     }
 }
-
-var field = new Field(80, 80, 20);
 
 class Params {
     constructor() {
         this.dl = 1; // Δl
+        this.dt_ms = 50; // Δt
+        this.sleepTime_ms = 50;
         this.curves = true;
         this.circles = false;
         this.lineWidth = 5;
@@ -61,10 +67,11 @@ class Params {
     }
 }
 
+var field = new Field(80, 80, 20);
 var params = new Params();
 var gui = new dat.GUI();
 
-window.addEventListener("load", function () {
+function paramsLoad() {
     function update() {
         if (params.autoUpdate) {
             clearScene();
@@ -75,6 +82,11 @@ window.addEventListener("load", function () {
     // gui.add(params, "curves").onChange(update);
     // gui.add(params, "circles").onChange(update);
     gui.add(params, "dl", 0.01, 1).onChange(update);
+    gui.add(params, "dt_ms", 20, 300).name("dt, ms").onChange(update);
+    gui.add(params, "sleepTime_ms", 5, 300)
+        .name("sleep time, ms")
+        .onChange(update);
+
     gui.add(params, "lineWidth", 1, 15).onChange(update);
     // gui.add(params, "taper", ["none", "linear", "parabolic", "wavy"]).onChange(
     //     update
@@ -92,60 +104,54 @@ window.addEventListener("load", function () {
     //     strokeTexture = texture;
     //     init();
     // });
-});
-
-/// https://stackoverflow.com/questions/7486085/copy-array-by-value
-function deepCopy(aObject) {
-    // Prevent undefined objects
-    // if (!aObject) return aObject;
-
-    let bObject = Array.isArray(aObject) ? [] : {};
-
-    let value;
-    for (const key in aObject) {
-        // Prevent self-references to parent object
-        // if (Object.is(aObject[key], aObject)) continue;
-
-        value = aObject[key];
-
-        bObject[key] = typeof value === "object" ? deepCopy(value) : value;
-    }
-
-    return bObject;
 }
 
+window.addEventListener("load", paramsLoad);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 class TrajectoryByPoints {
-    constructor(points, color_index = 1) {
-        this.length = 0;
-        this.sectors = [];
-        this.sectorDirections = [];
-        this.waypoints = [];
+    /**
+     * @param {THREE.Vector3[]} points точки по которым надо построить траекторию движения
+     * @param {number} colorIndex номер цвета линий траектории */
+    constructor(points, colorIndex = 1) {
         this.points = points;
-        this.color_index = color_index;
+        this.colorIndex = colorIndex;
 
         this.calculateSectors();
         this.calculateWaypoints();
 
-        console.log("trajectory length = %d", this.length);
-        console.log(this.waypoints);
+        // console.log("trajectory length = %d", this.length);
+        // console.log(this.waypoints);
 
         this.drawTrajectoryLines();
-        this.drawWaypoints();
+        // this.drawWaypoints();
+
+        this.distanceTraveled = 0;
+        this.locationSectorIndex = 0;
+        this.lengthOfSectorsTraveled = 0;
+        this.currentPosition = this.points[0];
+        this.locationSectorLength = () =>
+            this.sectors[this.locationSectorIndex].length();
     }
 
+    getСyclicIndex = (index) => index % this.points.length;
+
     calculateSectors() {
-        let get_index = (index) => (index == this.points.length ? 0 : index);
+        this.sectors = [];
+        this.sectorDirections = [];
+        this.trajectoryLength = 0;
 
         for (let index = 0; index < this.points.length; index++) {
-            const source = this.points[get_index(index)];
-            const target = this.points[get_index(index + 1)];
+            const source = this.points[this.getСyclicIndex(index)];
+            const target = this.points[this.getСyclicIndex(index + 1)];
             const sector = new THREE.Vector3(
                 target.x - source.x,
                 target.y - source.y,
                 target.z - source.z
             );
 
-            this.length += sector.length();
+            this.trajectoryLength += sector.length();
             this.sectors.push(sector);
 
             this.sectorDirections.push(
@@ -165,12 +171,12 @@ class TrajectoryByPoints {
 
         this.waypoints = [this.points[0]];
 
-        while (len + params.dl < this.length) {
+        while (len + params.dl < this.trajectoryLength) {
             len += params.dl;
 
             while (lengthNsSectors + this.sectors[n].length() < len) {
                 lengthNsSectors += this.sectors[n].length();
-                n += 1;
+                n++;
             }
 
             const deltaLen = len - lengthNsSectors;
@@ -193,16 +199,16 @@ class TrajectoryByPoints {
     drawTrajectoryLines() {
         for (let index = 0; index < this.points.length; index++) {
             const point = this.points[index];
-            // createPointCude(point.x, point.y, point.z, this.color_index);
+            // createPointCude(point.x, point.y, point.z, this.colorIndex);
         }
 
         for (let index = 0; index < this.points.length; index++) {
-            const source = this.points[this.get_index(index)];
-            const target = this.points[this.get_index(index + 1)];
+            const source = this.points[this.getСyclicIndex(index)];
+            const target = this.points[this.getСyclicIndex(index + 1)];
             var line = new THREE.Geometry();
             line.vertices.push(source);
             line.vertices.push(target);
-            makeLine(line, this.color_index);
+            makeLineFromGeo(line, this.colorIndex);
         }
     }
 
@@ -213,15 +219,89 @@ class TrajectoryByPoints {
                 waypoint.x,
                 waypoint.y,
                 waypoint.z,
-                this.color_index + 1
+                this.colorIndex + 1
             );
         }
+    }
+
+    /** Продвинуться по траектории определенное расстояние
+     * @param {number} distance расстояние
+     */
+    moveAlongTrajectory(distance) {
+        this.distanceTraveled += distance;
+
+        while (
+            this.lengthOfSectorsTraveled + this.locationSectorLength() <
+            this.distanceTraveled
+        ) {
+            this.lengthOfSectorsTraveled += this.locationSectorLength();
+            this.locationSectorIndex = this.getСyclicIndex(
+                this.locationSectorIndex + 1
+            );
+        }
+
+        const traveledDistanceOfLocationSector =
+            this.distanceTraveled - this.lengthOfSectorsTraveled;
+        const partOfLocationSector =
+            traveledDistanceOfLocationSector / this.locationSectorLength();
+        const sector = this.sectors[this.locationSectorIndex];
+        const point = this.points[this.locationSectorIndex];
+
+        this.currentPosition = new THREE.Vector3(
+            point.x + sector.x * partOfLocationSector,
+            point.y + sector.y * partOfLocationSector,
+            point.z + sector.z * partOfLocationSector
+        );
     }
 }
 
 /// Шаблон летающего сенсора
 class Sensor {
-    constructor() {}
+    constructor(trajectory, speed, colorIndex = 5) {
+        this.trajectory = trajectory;
+        this.speed = speed;
+        this.colorIndex = colorIndex;
+
+        this.buildSensorObject();
+        this.moving();
+    }
+
+    buildSensorObject() {
+        const sphereRadius = 1.5;
+        const sphereWidthDivisions = 16;
+        const sphereHeightDivisions = 16;
+        const sphereGeo = new THREE.SphereGeometry(
+            sphereRadius,
+            sphereWidthDivisions,
+            sphereHeightDivisions
+        );
+
+        const sphereMat = new THREE.MeshPhongMaterial({
+            color: colors[this.colorIndex],
+        });
+
+        this.meshObject = new THREE.Mesh(sphereGeo, sphereMat);
+        graph.add(this.meshObject);
+        this.positionSensor();
+    }
+
+    positionSensor() {
+        const pos = this.trajectory.currentPosition;
+        this.meshObject.position.set(pos.x, pos.y, pos.z);
+    }
+
+    makeStep() {
+        const dtSec = params.dt_ms / 1000;
+        this.trajectory.moveAlongTrajectory(this.speed * dtSec);
+        this.positionSensor();
+    }
+
+    async moving() {
+        while (true) {
+            this.makeStep();
+            await sleep(params.sleepTime_ms);
+        }
+    }
 }
 
 /// Шаблон статичного сенсора
@@ -272,7 +352,7 @@ function createFlyingSensors() {
 
     var trajectory = new TrajectoryByPoints(points);
     var flyingSensors = [];
-    flyingSensors.push(new Sensor(trajectory));
+    flyingSensors.push(new Sensor(trajectory, 10));
 
     for (var index = 0; index < flyingSensors.length; index++) {
         var s = flyingSensors[index];
@@ -280,28 +360,28 @@ function createFlyingSensors() {
     }
 }
 
-function createPointCude(x, y, z, color_index) {
+function createPointCude(x, y, z, colorIndex) {
     const size = 0.5;
     const geometry = new THREE.BoxGeometry(size, size, size);
     const material = new THREE.MeshPhongMaterial({
-        color: colors[color_index],
+        color: colors[colorIndex],
     });
     const cube = new THREE.Mesh(geometry, material);
     cube.position.set(x, y, z);
     graph.add(cube);
 }
 
-function createCylinder(x, y, z, color_index) {
+function createCylinder(x, y, z, colorIndex) {
     const geometry = new THREE.CylinderGeometry(3, 4, 2.5, 16);
     const material = new THREE.MeshPhongMaterial({
-        color: colors[color_index],
+        color: colors[colorIndex],
     });
     const cylinder = new THREE.Mesh(geometry, material);
     cylinder.position.set(x, y, z);
     graph.add(cylinder);
 }
 
-function makeLine(geo, c) {
+function makeLineFromGeo(geo, c) {
     var g = new MeshLine();
     g.setGeometry(geo);
 
@@ -317,7 +397,7 @@ function makeLine(geo, c) {
     graph.add(mesh);
 }
 
-function createSphere(x, y, z, color_index) {
+function createSphere(x, y, z, colorIndex) {
     const sphereRadius = 3;
     const sphereWidthDivisions = 16;
     const sphereHeightDivisions = 16;
@@ -328,20 +408,20 @@ function createSphere(x, y, z, color_index) {
     );
 
     const sphereMat = new THREE.MeshPhongMaterial({
-        color: colors[color_index],
+        color: colors[colorIndex],
     });
     const mesh = new THREE.Mesh(sphereGeo, sphereMat);
     mesh.position.set(x, y, z);
     graph.add(mesh);
 }
 
-function createOctahedron(x, y, z, color_index) {
+function createOctahedron(x, y, z, colorIndex) {
     // https://threejs.org/docs/#api/en/geometries/OctahedronGeometry
 
     const octahedronRadius = 3;
     const octahedronGeo = new THREE.OctahedronGeometry(octahedronRadius);
     const octahedronMat = new THREE.MeshPhongMaterial({
-        color: colors[color_index],
+        color: colors[colorIndex],
     });
     const mesh = new THREE.Mesh(octahedronGeo, octahedronMat);
     mesh.position.set(x, y, z);
@@ -365,8 +445,8 @@ function createVertices() {
 function createEdges() {
     for (let i = 0; i < jsonData.edges.length; i++) {
         const element = jsonData.edges[i];
-        const coords_sourse = element.coords_sourse;
-        const coords_target = element.coords_target;
+        const coordsSourse = element.coordsSourse;
+        const coordsTarget = element.coordsTarget;
         const type = Number(element.type);
         // console.log(element);
 
@@ -374,30 +454,29 @@ function createEdges() {
 
         var line = new THREE.Geometry();
         line.vertices.push(
-            new THREE.Vector3(
-                coords_sourse[0],
-                coords_sourse[1],
-                coords_sourse[2]
-            )
+            new THREE.Vector3(coordsSourse[0], coordsSourse[1], coordsSourse[2])
         );
 
         line.vertices.push(
-            new THREE.Vector3(
-                coords_target[0],
-                coords_target[1],
-                coords_target[2]
-            )
+            new THREE.Vector3(coordsTarget[0], coordsTarget[1], coordsTarget[2])
         );
 
-        makeLine(line, type);
+        makeLineFromGeo(line, type);
     }
+}
+
+function createLine(sourceVector3, targetVector3) {
+    var line = new THREE.Geometry();
+    line.vertices.push(sourceVector3);
+    line.vertices.push(targetVector3);
+    makeLineFromGeo(line, 3);
 }
 
 function createArrow(sourceVector3, targetVector3) {
     var line = new THREE.Geometry();
     line.vertices.push(sourceVector3);
     line.vertices.push(targetVector3);
-    makeLine(line, 3);
+    makeLineFromGeo(line, 3);
 
     var x = targetVector3.x - sourceVector3.x;
     var y = targetVector3.y - sourceVector3.y;
@@ -452,43 +531,18 @@ function createArrow(sourceVector3, targetVector3) {
     graph.add(mesh);
 }
 
-function createLines() {
-    var line = new THREE.Geometry();
-    line.vertices.push(new THREE.Vector3(-30, -30, -30));
-    line.vertices.push(new THREE.Vector3(30, -30, -30));
-    makeLine(line, 3);
-
-    var line = new THREE.Geometry();
-    line.vertices.push(new THREE.Vector3(-30, -30, -30));
-    line.vertices.push(new THREE.Vector3(-30, 30, -30));
-    makeLine(line, 3);
-
-    var line = new THREE.Geometry();
-    line.vertices.push(new THREE.Vector3(-30, -30, -30));
-    line.vertices.push(new THREE.Vector3(-30, -30, 30));
-    makeLine(line, 3);
-
-    // var line = new Float32Array(600);
-    // for (var j = 0; j < 200 * 3; j += 3) {
-    //     line[j] = -30 + 0.1 * j;
-    //     line[j + 1] = 5 * Math.sin(0.01 * j) * Math.cos(0.005 * j);
-    //     line[j + 2] = 0;
-    // }
-    // makeLine(line, 1);
-}
-
 function createAxis() {
     createArrow(
         new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(field.width_x, 0, 0)
+        new THREE.Vector3(field.axisLength_x, 0, 0)
     );
     createArrow(
         new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, field.height_y, 0)
+        new THREE.Vector3(0, field.axisLength_y, 0)
     );
     createArrow(
         new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, field.width_z)
+        new THREE.Vector3(0, 0, field.axisLength_z)
     );
 
     // куб 0 0 0
@@ -499,6 +553,16 @@ function createAxis() {
     //     const mesh = new THREE.Mesh(cubeGeo, cubeMat);
     //     graph.add(mesh);
     // }
+
+    createLine(
+        new THREE.Vector3(field.width_x, 0, 0),
+        new THREE.Vector3(field.width_x, 0, field.width_z)
+    );
+
+    createLine(
+        new THREE.Vector3(0, 0, field.width_z),
+        new THREE.Vector3(field.width_x, 0, field.width_z)
+    );
 }
 
 function textParameters(text, fontSize) {
@@ -530,9 +594,9 @@ function createAxisText() {
     var label_y = new THREE.TextSprite(parameters_y);
     var label_z = new THREE.TextSprite(parameters_z);
 
-    label_x.position.set(field.width_x + fontSize, 0, 0);
-    label_y.position.set(0, field.height_y + fontSize, 0);
-    label_z.position.set(0, 0, field.width_z + fontSize);
+    label_x.position.set(field.axisLength_x + fontSize, 0, 0);
+    label_y.position.set(0, field.axisLength_y + fontSize, 0);
+    label_z.position.set(0, 0, field.axisLength_z + fontSize);
 
     graph.add(label_x);
     graph.add(label_y);
