@@ -81,7 +81,7 @@ function paramsLoad() {
 
     // gui.add(params, "curves").onChange(update);
     // gui.add(params, "circles").onChange(update);
-    gui.add(params, "dl", 0.01, 1).onChange(update);
+    gui.add(params, "dl", 0.5, 5).onChange(update);
     gui.add(params, "dt_ms", 20, 300).name("dt, ms").onChange(update);
     gui.add(params, "sleepTime_ms", 5, 300)
         .name("sleep time, ms")
@@ -119,20 +119,13 @@ class TrajectoryByPoints {
         this.colorIndex = colorIndex;
 
         this.calculateSectors();
-        this.calculateWaypoints();
+        this.drawTrajectoryLines();
+        this.initializeDataForMovement();
 
+        // this.calculateWaypoints();
         // console.log("trajectory length = %d", this.length);
         // console.log(this.waypoints);
-
-        this.drawTrajectoryLines();
         // this.drawWaypoints();
-
-        this.distanceTraveled = 0;
-        this.locationSectorIndex = 0;
-        this.lengthOfSectorsTraveled = 0;
-        this.currentPosition = this.points[0];
-        this.locationSectorLength = () =>
-            this.sectors[this.locationSectorIndex].length();
     }
 
     getСyclicIndex = (index) => index % this.points.length;
@@ -199,7 +192,7 @@ class TrajectoryByPoints {
     drawTrajectoryLines() {
         for (let index = 0; index < this.points.length; index++) {
             const point = this.points[index];
-            // createPointCude(point.x, point.y, point.z, this.colorIndex);
+            createPointCude(point.x, point.y, point.z, this.colorIndex);
         }
 
         for (let index = 0; index < this.points.length; index++) {
@@ -222,6 +215,15 @@ class TrajectoryByPoints {
                 this.colorIndex + 1
             );
         }
+    }
+
+    initializeDataForMovement() {
+        this.distanceTraveled = 0;
+        this.locationSectorIndex = 0;
+        this.lengthOfSectorsTraveled = 0;
+        this.currentPosition = this.points[0];
+        this.locationSectorLength = () =>
+            this.sectors[this.locationSectorIndex].length();
     }
 
     /** Продвинуться по траектории определенное расстояние
@@ -252,6 +254,55 @@ class TrajectoryByPoints {
             point.y + sector.y * partOfLocationSector,
             point.z + sector.z * partOfLocationSector
         );
+    }
+}
+
+class RectangleTrajectory extends TrajectoryByPoints {
+    /**
+     * @param {THREE.Vector3} cornerA первый угол прямоугольника
+     * @param {THREE.Vector3} cornerB диагонально противоположенный угол прямоугольника
+     * @param {number} colorIndex номер цвета линий траектории */
+    constructor(cornerA, cornerB, colorIndex = 1) {
+        // обмениваемся z координатами для создания недостающих 2 точек
+        const cornerA1 = new THREE.Vector3(cornerA.x, cornerA.y, cornerB.z);
+        const cornerB1 = new THREE.Vector3(cornerB.x, cornerB.y, cornerA.z);
+        const rectanglePoints = [cornerA, cornerA1, cornerB, cornerB1];
+        super(rectanglePoints, colorIndex);
+    }
+}
+
+class CircleTrajectory extends TrajectoryByPoints {
+    /**
+     * @param {THREE.Vector3} center
+     * @param {number} radius
+     * @param {number} colorIndex номер цвета линий траектории */
+    constructor(
+        center = new THREE.Vector3(0, 0, 0),
+        radius = 20,
+        colorIndex = 1
+    ) {
+        // x = r cos t ; y = r sin t ; 0 ≤ t < 2π
+        const x = (t) => center.x + radius * Math.cos(t);
+        const y = center.y;
+        const z = (t) => center.z + radius * Math.sin(t);
+
+        // считаем угол равнобедренного треугольника
+        // alpha / 2 = sin(dl / 2 / r)
+        const realAlpha = Math.sin(params.dl / 2 / radius) * 2;
+        const n = Math.ceil((2 * Math.PI) / realAlpha);
+        const alpha = (2 * Math.PI) / n;
+
+        let circlePoints = [];
+
+        for (let i = 0; i < n; i++) {
+            const t = i * alpha;
+            circlePoints.push(new THREE.Vector3(x(t), y, z(t)));
+        }
+
+        super(circlePoints, colorIndex);
+
+        this.center = center;
+        this.radius = radius;
     }
 }
 
@@ -350,7 +401,10 @@ function createFlyingSensors() {
         new THREE.Vector3(40, 10, 40),
     ];
 
-    var trajectory = new TrajectoryByPoints(points);
+    // var trajectory = new TrajectoryByPoints(points);
+    // var trajectory = new RectangleTrajectory(points[0], points[2]);
+    var trajectory = new CircleTrajectory();
+
     var flyingSensors = [];
     flyingSensors.push(new Sensor(trajectory, 10));
 
