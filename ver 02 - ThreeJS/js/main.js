@@ -1,5 +1,7 @@
 "use strict";
 
+// init ThreeJS
+
 let container = document.getElementById("container");
 
 let scene = new THREE.Scene();
@@ -21,7 +23,6 @@ container.appendChild(renderer.domElement);
 var controls = new THREE.OrbitControls(camera, renderer.domElement);
 var clock = new THREE.Clock();
 
-var axisSize = 60;
 var colors = [
     0xed6a5a, 0xf4f1bb, 0x9bc1bc, 0x5ca4a9, 0xe6ebe0, 0xf0b67f, 0xfe5f55,
     0xd6d1b1, 0xc7efcf, 0xeef5db, 0x50514f, 0xf25f5c, 0xffe066, 0x247ba0,
@@ -34,7 +35,11 @@ var graph = new THREE.Object3D();
 scene.add(graph);
 
 class Field {
-    constructor(width_x, width_z, height_y) {
+    constructor(
+        width_x = params.fieldWidthX,
+        width_z = params.fieldWidthZ,
+        height_y = params.fieldHeight
+    ) {
         this.width_x = width_x;
         this.width_z = width_z;
         this.height_y = height_y;
@@ -52,6 +57,14 @@ class Params {
         this.dl = 1; // Δl
         this.dt_ms = 50; // Δt
         this.sleepTime_ms = 50;
+
+        this.fieldWidthX = 80;
+        this.fieldWidthZ = 80;
+        this.fieldHeight = 40;
+
+        this.radioVisibility = 15;
+        this.showAreaOfRadioVisibility = true;
+
         this.curves = true;
         this.circles = false;
         this.lineWidth = 5;
@@ -62,42 +75,68 @@ class Params {
         this.autoUpdate = true;
         this.update = function () {
             clearScene();
-            init();
+            main();
         };
     }
 }
 
-var field = new Field(80, 80, 20);
 var params = new Params();
-var gui = new dat.GUI();
+var field = new Field();
+var gui = new dat.GUI({ width: 450 });
 
 function paramsLoad() {
     function update() {
         if (params.autoUpdate) {
+            field = new Field();
             clearScene();
-            init();
+            main();
         }
     }
 
     // gui.add(params, "curves").onChange(update);
     // gui.add(params, "circles").onChange(update);
-    gui.add(params, "dl", 0.5, 5).onChange(update);
+    gui.add(params, "dl", 0.5, 5).name("dl, km").onChange(update);
     gui.add(params, "dt_ms", 20, 300).name("dt, ms").onChange(update);
-    gui.add(params, "sleepTime_ms", 5, 300)
+    gui.add(params, "sleepTime_ms", 20, 300)
         .name("sleep time, ms")
         .onChange(update);
 
-    gui.add(params, "lineWidth", 1, 15).onChange(update);
+    gui.add(params, "fieldWidthX", 10, 300)
+        .name("field width X, km")
+        .onChange(update);
+
+    gui.add(params, "fieldWidthZ", 10, 300)
+        .name("field width Z, km")
+        .onChange(update);
+
+    gui.add(params, "fieldHeight", 10, 100)
+        .name("field height, km")
+        .onChange(update);
+
+    gui.add(params, "radioVisibility", 5, 30)
+        .name("radio visibility, km")
+        .onChange(update);
+
+    gui.add(params, "showAreaOfRadioVisibility")
+        .name("show area of radio visibility")
+        .onChange(update);
+
+    gui.add(params, "lineWidth", 1, 15).name("line width").onChange(update);
+
     // gui.add(params, "taper", ["none", "linear", "parabolic", "wavy"]).onChange(
     //     update
     // );
     // gui.add(params, "strokes").onChange(update);
     // gui.add(params, "sizeAttenuation").onChange(update);
-    gui.add(params, "autoUpdate").onChange(update);
+    // gui.add(params, "autoUpdate").onChange(update);
+
+    gui.add(params, "autoRotate")
+        .name("auto rotate")
+        .onChange(function () {
+            clock.getDelta();
+        });
+
     gui.add(params, "update");
-    gui.add(params, "autoRotate").onChange(function () {
-        clock.getDelta();
-    });
 
     // var loader = new THREE.TextureLoader();
     // loader.load("assets/stroke.png", function (texture) {
@@ -310,11 +349,21 @@ class CircleTrajectory extends TrajectoryByPoints {
 class Sensor {
     constructor(trajectory, speed, colorIndex = 5) {
         this.trajectory = trajectory;
-        this.speed = speed;
         this.colorIndex = colorIndex;
+        this.speed = speed;
+        this.id = -1;
 
         this.buildSensorObject();
-        this.moving();
+        this.buildAreaOfRadioVisibility();
+        this.updateSensorPosition();
+    }
+
+    setId(id) {
+        this.id = id;
+    }
+
+    getPos() {
+        return this.trajectory.currentPosition;
     }
 
     buildSensorObject() {
@@ -331,27 +380,43 @@ class Sensor {
             color: colors[this.colorIndex],
         });
 
-        this.meshObject = new THREE.Mesh(sphereGeo, sphereMat);
-        graph.add(this.meshObject);
-        this.positionSensor();
+        this.sensorObject = new THREE.Mesh(sphereGeo, sphereMat);
+        graph.add(this.sensorObject);
     }
 
-    positionSensor() {
-        const pos = this.trajectory.currentPosition;
-        this.meshObject.position.set(pos.x, pos.y, pos.z);
+    buildAreaOfRadioVisibility() {
+        const sphereRadius = params.radioVisibility;
+        const sphereWidthDivisions = 16;
+        const sphereHeightDivisions = 16;
+        const sphereGeo = new THREE.SphereGeometry(
+            sphereRadius,
+            sphereWidthDivisions,
+            sphereHeightDivisions
+        );
+
+        const sphereMat = new THREE.MeshPhongMaterial({
+            visible: params.showAreaOfRadioVisibility,
+            color: colors[this.colorIndex],
+            transparent: true,
+            opacity: 0.2,
+        });
+
+        this.areaOfRadioVisibility = new THREE.Mesh(sphereGeo, sphereMat);
+        graph.add(this.areaOfRadioVisibility);
+    }
+
+    updateSensorPosition() {
+        const pos = this.getPos();
+        this.sensorObject.position.set(pos.x, pos.y, pos.z);
+        if (params.showAreaOfRadioVisibility) {
+            this.areaOfRadioVisibility.position.set(pos.x, pos.y, pos.z);
+        }
     }
 
     makeStep() {
         const dtSec = params.dt_ms / 1000;
         this.trajectory.moveAlongTrajectory(this.speed * dtSec);
-        this.positionSensor();
-    }
-
-    async moving() {
-        while (true) {
-            this.makeStep();
-            await sleep(params.sleepTime_ms);
-        }
+        this.updateSensorPosition();
     }
 }
 
@@ -361,10 +426,206 @@ class StaticSensor {
         this.x = x;
         this.y = y;
         this.z = z;
+
+        this.position = new THREE.Vector3(x, y, z);
+        this.colorIndex = 2;
+        this.id = -1;
+    }
+
+    setId(id) {
+        this.id = id;
+    }
+
+    getPos() {
+        return this.position;
+    }
+
+    buildSensorObject() {
+        createCylinder(this.x, this.y, this.z, this.colorIndex);
+    }
+
+    buildAreaOfRadioVisibility() {
+        const sphereRadius = params.radioVisibility;
+        const sphereWidthDivisions = 16;
+        const sphereHeightDivisions = 16;
+        const sphereGeo = new THREE.SphereGeometry(
+            sphereRadius,
+            sphereWidthDivisions,
+            sphereHeightDivisions
+        );
+
+        const sphereMat = new THREE.MeshPhongMaterial({
+            visible: params.showAreaOfRadioVisibility,
+            color: colors[this.colorIndex],
+            transparent: true,
+            opacity: 0.2,
+        });
+
+        this.areaOfRadioVisibility = new THREE.Mesh(sphereGeo, sphereMat);
+        graph.add(this.areaOfRadioVisibility);
     }
 }
 
-init();
+class SensorsConnection {
+    // constructor(id1, id2) {
+    //     this.id1 = id1;
+    //     this.id2 = id2;
+
+    constructor(sensor1, sensor2) {
+        this.sensor1 = sensor1;
+        this.sensor2 = sensor2;
+        this.id1 = sensor1.id;
+        this.id2 = sensor2.id;
+        this.colorIndex = 0;
+
+        this.buildConnectionLine();
+    }
+
+    getDistance(pos1, pos2) {
+        return Math.sqrt(
+            Math.pow(pos1.x - pos2.x, 2) +
+                Math.pow(pos1.y - pos2.y, 2) +
+                Math.pow(pos1.z - pos2.z, 2)
+        );
+    }
+
+    buildConnectionLine(pos1, pos2) {
+        // this.line = createLine(pos1, pos2, this.colorIndex);
+
+        var lineGeometry = new THREE.Geometry();
+        lineGeometry.vertices.push(pos1);
+        lineGeometry.vertices.push(pos2);
+
+        this.g = new MeshLine();
+        this.g.setGeometry(lineGeometry);
+
+        this.mesh = new THREE.Mesh(
+            this.g.geometry,
+            getMeshLineMaterial(this.colorIndex)
+        );
+
+        graph.add(this.mesh);
+    }
+
+    updateConnectionLine_old(pos1, pos2) {
+        var lineGeometry = new THREE.Geometry();
+        lineGeometry.vertices.push(pos1);
+        lineGeometry.vertices.push(pos2);
+        this.g.setGeometry(lineGeometry);
+
+        const distance = this.getDistance(pos1, pos2);
+        this.mesh.visible = distance <= params.radioVisibility * 2;
+    }
+
+    updateConnectionLine() {
+        const pos1 = this.sensor1.getPos();
+        const pos2 = this.sensor2.getPos();
+
+        var lineGeometry = new THREE.Geometry();
+        lineGeometry.vertices.push(pos1);
+        lineGeometry.vertices.push(pos2);
+        this.g.setGeometry(lineGeometry);
+
+        const distance = this.getDistance(pos1, pos2);
+        this.mesh.visible = distance <= params.radioVisibility * 2;
+    }
+}
+
+class SensorSimulation {
+    constructor() {
+        this.nextId = 0;
+        this.sensors = new Map();
+        this.staticSensorIds = [];
+        this.flyingSensorIds = [];
+        this.connections = [];
+
+        this.createStaticSensors();
+        this.createFlyingSensors();
+        this.createConnectionsBetweenSensors();
+    }
+
+    getNewId() {
+        const newId = this.nextId;
+        this.nextId++;
+        return newId;
+    }
+
+    addStaticSensor(staticSensor) {
+        const id = this.getNewId();
+        this.sensors.set(id, staticSensor);
+        this.staticSensorIds.push(id);
+    }
+
+    addFlyingSensor(flyingSensor) {
+        const id = this.getNewId();
+        this.sensors.set(id, flyingSensor);
+        this.flyingSensorIds.push(id);
+    }
+
+    createStaticSensors() {
+        this.addStaticSensor(new StaticSensor(30, 0, 30));
+        this.addStaticSensor(new StaticSensor(60, 0, 60));
+    }
+
+    createFlyingSensors() {
+        var points = [
+            new THREE.Vector3(10, 10, 10),
+            new THREE.Vector3(40, 10, 10),
+            new THREE.Vector3(40, 10, 40),
+        ];
+
+        // var trajectory = new TrajectoryByPoints(points);
+        var trajectory1 = new RectangleTrajectory(points[0], points[2]);
+        var trajectory2 = new CircleTrajectory(
+            new THREE.Vector3(30, 30, 30),
+            15
+        );
+
+        this.addFlyingSensor(new Sensor(trajectory1, 10, 6));
+        this.addFlyingSensor(new Sensor(trajectory2, 10, 5));
+    }
+
+    createConnectionsBetweenSensors() {
+        for (let i = 0; i < this.flyingSensorIds.length; i++) {
+            const id1 = this.flyingSensorIds[i];
+            for (let j = i; j < this.flyingSensorIds.length; j++) {
+                const id2 = this.flyingSensorIds[j];
+                // var connection = new SensorsConnection(id1, id2);
+                var connection = new SensorsConnection(
+                    this.sensors.get(id1),
+                    this.sensors.get(id2)
+                );
+                connection.buildConnectionLine(
+                    this.sensors.get(id1).getPos(),
+                    this.sensors.get(id2).getPos()
+                );
+
+                this.connections.push(connection);
+            }
+        }
+    }
+
+    async start() {
+        while (true) {
+            for (let i = 0; i < this.flyingSensorIds.length; i++) {
+                const sensorId = this.flyingSensorIds[i];
+                this.sensors.get(sensorId).makeStep();
+            }
+
+            this.connections.forEach((connection) => {
+                // connection.updateConnectionLine(
+                //     this.sensors.get(connection.id1).getPos(),
+                //     this.sensors.get(connection.id2).getPos()
+                // );
+                connection.updateConnectionLine();
+            });
+
+            await sleep(params.sleepTime_ms);
+        }
+    }
+}
+
+main();
 render();
 
 function clearScene() {
@@ -373,45 +634,13 @@ function clearScene() {
     scene.add(graph);
 }
 
-function init() {
-    // console.log(jsonData);
-
+function main() {
     createAxis();
     createAxisText();
     creatrLight();
-    createStaticSensors();
-    createFlyingSensors();
-}
 
-function createStaticSensors() {
-    var staticSensors = [];
-    staticSensors.push(new StaticSensor(30, 0, 30));
-    staticSensors.push(new StaticSensor(60, 0, 30));
-
-    for (var index = 0; index < staticSensors.length; index++) {
-        var s = staticSensors[index];
-        createCylinder(s.x, s.y, s.z, 2);
-    }
-}
-
-function createFlyingSensors() {
-    var points = [
-        new THREE.Vector3(10, 10, 10),
-        new THREE.Vector3(40, 10, 10),
-        new THREE.Vector3(40, 10, 40),
-    ];
-
-    // var trajectory = new TrajectoryByPoints(points);
-    // var trajectory = new RectangleTrajectory(points[0], points[2]);
-    var trajectory = new CircleTrajectory();
-
-    var flyingSensors = [];
-    flyingSensors.push(new Sensor(trajectory, 10));
-
-    for (var index = 0; index < flyingSensors.length; index++) {
-        var s = flyingSensors[index];
-        // createCylinder(s.x, s.y, s.z, 2);
-    }
+    var simulation = new SensorSimulation();
+    simulation.start();
 }
 
 function createPointCude(x, y, z, colorIndex) {
@@ -433,22 +662,6 @@ function createCylinder(x, y, z, colorIndex) {
     const cylinder = new THREE.Mesh(geometry, material);
     cylinder.position.set(x, y, z);
     graph.add(cylinder);
-}
-
-function makeLineFromGeo(geo, c) {
-    var g = new MeshLine();
-    g.setGeometry(geo);
-
-    var material = new MeshLineMaterial({
-        useMap: false,
-        color: new THREE.Color(colors[c]),
-        opacity: 1,
-        resolution: resolution,
-        sizeAttenuation: false,
-        lineWidth: params.lineWidth,
-    });
-    var mesh = new THREE.Mesh(g.geometry, material);
-    graph.add(mesh);
 }
 
 function createSphere(x, y, z, colorIndex) {
@@ -519,11 +732,40 @@ function createEdges() {
     }
 }
 
-function createLine(sourceVector3, targetVector3) {
+function getMeshLineMaterial(colorIndex) {
+    return new MeshLineMaterial({
+        useMap: false,
+        color: new THREE.Color(colors[colorIndex]),
+        opacity: 1,
+        resolution: resolution,
+        sizeAttenuation: false,
+        lineWidth: params.lineWidth,
+    });
+}
+
+function makeLineFromGeo(geo, c) {
+    var g = new MeshLine();
+    g.setGeometry(geo);
+
+    // var material = new MeshLineMaterial({
+    //     useMap: false,
+    //     color: new THREE.Color(colors[c]),
+    //     opacity: 1,
+    //     resolution: resolution,
+    //     sizeAttenuation: false,
+    //     lineWidth: params.lineWidth,
+    // });
+
+    var mesh = new THREE.Mesh(g.geometry, getMeshLineMaterial(c));
+    graph.add(mesh);
+    return mesh;
+}
+
+function createLine(sourceVector3, targetVector3, colorIndex = 3) {
     var line = new THREE.Geometry();
     line.vertices.push(sourceVector3);
     line.vertices.push(targetVector3);
-    makeLineFromGeo(line, 3);
+    return makeLineFromGeo(line, colorIndex);
 }
 
 function createArrow(sourceVector3, targetVector3) {
