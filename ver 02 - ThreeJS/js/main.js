@@ -64,6 +64,8 @@ class Params {
 
         this.radioVisibility = 15;
         this.showAreaOfRadioVisibility = true;
+        this.showTrajectoryPoints = false;
+        this.showTrajectoryLines = true;
 
         this.curves = true;
         this.circles = false;
@@ -77,6 +79,8 @@ class Params {
             clearScene();
             main();
         };
+
+        this.pause = false;
     }
 }
 
@@ -93,8 +97,6 @@ function paramsLoad() {
         }
     }
 
-    // gui.add(params, "curves").onChange(update);
-    // gui.add(params, "circles").onChange(update);
     gui.add(params, "dl", 0.5, 5).name("dl, km").onChange(update);
     gui.add(params, "dt_ms", 20, 300).name("dt, ms").onChange(update);
     gui.add(params, "sleepTime_ms", 20, 300)
@@ -121,20 +123,23 @@ function paramsLoad() {
         .name("show area of radio visibility")
         .onChange(update);
 
-    gui.add(params, "lineWidth", 1, 15).name("line width").onChange(update);
+    gui.add(params, "showTrajectoryPoints")
+        .name("show trajectory points")
+        .onChange(update);
 
-    // gui.add(params, "taper", ["none", "linear", "parabolic", "wavy"]).onChange(
-    //     update
-    // );
-    // gui.add(params, "strokes").onChange(update);
-    // gui.add(params, "sizeAttenuation").onChange(update);
-    // gui.add(params, "autoUpdate").onChange(update);
+    gui.add(params, "showTrajectoryLines")
+        .name("show trajectory lines")
+        .onChange(update);
+
+    gui.add(params, "lineWidth", 1, 15).name("line width").onChange(update);
 
     gui.add(params, "autoRotate")
         .name("auto rotate")
         .onChange(function () {
             clock.getDelta();
         });
+
+    // gui.add(params, "pause").name("pause").onChange(update);
 
     gui.add(params, "update");
 
@@ -229,18 +234,22 @@ class TrajectoryByPoints {
     }
 
     drawTrajectoryLines() {
-        for (let index = 0; index < this.points.length; index++) {
-            const point = this.points[index];
-            createPointCude(point.x, point.y, point.z, this.colorIndex);
+        if (params.showTrajectoryPoints) {
+            for (let index = 0; index < this.points.length; index++) {
+                const point = this.points[index];
+                createPointCude(point.x, point.y, point.z, this.colorIndex);
+            }
         }
 
-        for (let index = 0; index < this.points.length; index++) {
-            const source = this.points[this.getСyclicIndex(index)];
-            const target = this.points[this.getСyclicIndex(index + 1)];
-            var line = new THREE.Geometry();
-            line.vertices.push(source);
-            line.vertices.push(target);
-            makeLineFromGeo(line, this.colorIndex);
+        if (params.showTrajectoryLines) {
+            for (let index = 0; index < this.points.length; index++) {
+                const source = this.points[this.getСyclicIndex(index)];
+                const target = this.points[this.getСyclicIndex(index + 1)];
+                var line = new THREE.Geometry();
+                line.vertices.push(source);
+                line.vertices.push(target);
+                makeLineFromGeo(line, this.colorIndex);
+            }
         }
     }
 
@@ -299,13 +308,108 @@ class TrajectoryByPoints {
 class RectangleTrajectory extends TrajectoryByPoints {
     /**
      * @param {THREE.Vector3} cornerA первый угол прямоугольника
-     * @param {THREE.Vector3} cornerB диагонально противоположенный угол прямоугольника
+     * @param {THREE.Vector3} cornerC диагонально противоположенный угол прямоугольника
      * @param {number} colorIndex номер цвета линий траектории */
-    constructor(cornerA, cornerB, colorIndex = 1) {
+    constructor(cornerA, cornerC, colorIndex = 1) {
         // обмениваемся z координатами для создания недостающих 2 точек
-        const cornerA1 = new THREE.Vector3(cornerA.x, cornerA.y, cornerB.z);
-        const cornerB1 = new THREE.Vector3(cornerB.x, cornerB.y, cornerA.z);
-        const rectanglePoints = [cornerA, cornerA1, cornerB, cornerB1];
+        // (по часовой)
+        const cornerB = new THREE.Vector3(cornerC.x, cornerC.y, cornerA.z);
+        const cornerD = new THREE.Vector3(cornerA.x, cornerA.y, cornerC.z);
+        const rectanglePoints = [cornerA, cornerB, cornerC, cornerD];
+        super(rectanglePoints, colorIndex);
+    }
+}
+
+class RoundedRectangleTrajectory extends TrajectoryByPoints {
+    /**
+     * @param {THREE.Vector3} cornerA первый угол прямоугольника
+     * @param {THREE.Vector3} cornerC диагонально противоположенный угол прямоугольника
+     * @param {number} colorIndex номер цвета линий траектории */
+    constructor(cornerA, cornerC, colorIndex = 1) {
+        // обмениваемся z координатами для создания недостающих 2 точек
+        // (по часовой)
+        const cornerB = new THREE.Vector3(cornerC.x, cornerC.y, cornerA.z);
+        const cornerD = new THREE.Vector3(cornerA.x, cornerA.y, cornerC.z);
+
+        /**
+         * вектор помноженный на число
+         * @param {THREE.Vector3} vector вектор
+         * @param {number} alhpa число */
+        let partOfVector = (vector, alhpa = 0.1) => {
+            return new THREE.Vector3(
+                vector.x * alhpa,
+                vector.y * alhpa,
+                vector.z * alhpa
+            );
+        };
+
+        const alpha = 0.9;
+
+        /**
+         * сдвиг от одного вектора
+         * @param {THREE.Vector3} vectorA первый вектор
+         * @param {THREE.Vector3} vectorB второй вектор */
+        let getShift = (vectorA, vectorB) => {
+            const beta = 3.2;
+            return new THREE.Vector3(
+                vectorA.x + beta * alpha * Math.sign(vectorB.x - vectorA.x),
+                vectorA.y + beta * alpha * Math.sign(vectorB.y - vectorA.y),
+                vectorA.z + beta * alpha * Math.sign(vectorB.z - vectorA.z)
+            );
+        };
+
+        /**
+         * сдвиг от двух векторов
+         * @param {THREE.Vector3} vectorA первый вектор
+         * @param {THREE.Vector3} vectorB второй вектор
+         * @param {THREE.Vector3} vectorС третий вектор */
+        let getDoubleShift = (vectorA, vectorB, vectorC) => {
+            return new THREE.Vector3(
+                vectorA.x +
+                    alpha * Math.sign(vectorB.x - vectorA.x) +
+                    alpha * Math.sign(vectorC.x - vectorA.x),
+                vectorA.y +
+                    alpha * Math.sign(vectorB.y - vectorA.y) +
+                    alpha * Math.sign(vectorC.y - vectorA.y),
+                vectorA.z +
+                    alpha * Math.sign(vectorB.z - vectorA.z) +
+                    alpha * Math.sign(vectorC.z - vectorA.z)
+            );
+        };
+
+        const cornerA1 = getShift(cornerA, cornerD);
+        const cornerA2 = getDoubleShift(cornerA, cornerB, cornerD);
+        const cornerA3 = getShift(cornerA, cornerB);
+
+        const cornerB1 = getShift(cornerB, cornerA);
+        const cornerB2 = getDoubleShift(cornerB, cornerA, cornerC);
+        const cornerB3 = getShift(cornerB, cornerC);
+
+        const cornerC1 = getShift(cornerC, cornerB);
+        const cornerC2 = getDoubleShift(cornerC, cornerB, cornerD);
+        const cornerC3 = getShift(cornerC, cornerD);
+
+        const cornerD1 = getShift(cornerD, cornerC);
+        const cornerD2 = getDoubleShift(cornerD, cornerA, cornerC);
+        const cornerD3 = getShift(cornerD, cornerA);
+
+        const rectanglePoints = [
+            cornerA1,
+            cornerA2,
+            cornerA3,
+
+            cornerB1,
+            cornerB2,
+            cornerB3,
+
+            cornerC1,
+            cornerC2,
+            cornerC3,
+
+            cornerD1,
+            cornerD2,
+            cornerD3,
+        ];
         super(rectanglePoints, colorIndex);
     }
 }
@@ -467,18 +571,60 @@ class StaticSensor {
 }
 
 class SensorsConnection {
-    // constructor(id1, id2) {
-    //     this.id1 = id1;
-    //     this.id2 = id2;
-
+    /// simplest
     constructor(sensor1, sensor2) {
         this.sensor1 = sensor1;
         this.sensor2 = sensor2;
         this.id1 = sensor1.id;
         this.id2 = sensor2.id;
         this.colorIndex = 0;
+    }
 
-        this.buildConnectionLine();
+    getDistance(pos1, pos2) {
+        return Math.sqrt(
+            Math.pow(pos1.x - pos2.x, 2) +
+                Math.pow(pos1.y - pos2.y, 2) +
+                Math.pow(pos1.z - pos2.z, 2)
+        );
+    }
+
+    buildConnectionLine() {
+        const pos1 = this.sensor1.getPos();
+        const pos2 = this.sensor2.getPos();
+
+        var lineGeometry = new THREE.Geometry();
+        lineGeometry.vertices.push(pos1);
+        lineGeometry.vertices.push(pos2);
+
+        this.g = new MeshLine();
+        this.g.setGeometry(lineGeometry);
+
+        this.mesh = new THREE.Mesh(
+            this.g.geometry,
+            getMeshLineMaterial(this.colorIndex)
+        );
+
+        graph.add(this.mesh);
+    }
+
+    updateConnectionLine() {
+        const pos1 = this.sensor1.getPos();
+        const pos2 = this.sensor2.getPos();
+
+        var lineGeometry = new THREE.Geometry();
+        lineGeometry.vertices.push(pos1);
+        lineGeometry.vertices.push(pos2);
+        this.g.setGeometry(lineGeometry);
+
+        const distance = this.getDistance(pos1, pos2);
+        this.mesh.visible = distance <= params.radioVisibility * 2;
+    }
+}
+
+class SensorsConnectionTrue {
+    constructor(id1, id2) {
+        this.id1 = id1;
+        this.id2 = id2;
     }
 
     getDistance(pos1, pos2) {
@@ -508,19 +654,6 @@ class SensorsConnection {
     }
 
     updateConnectionLine_old(pos1, pos2) {
-        var lineGeometry = new THREE.Geometry();
-        lineGeometry.vertices.push(pos1);
-        lineGeometry.vertices.push(pos2);
-        this.g.setGeometry(lineGeometry);
-
-        const distance = this.getDistance(pos1, pos2);
-        this.mesh.visible = distance <= params.radioVisibility * 2;
-    }
-
-    updateConnectionLine() {
-        const pos1 = this.sensor1.getPos();
-        const pos2 = this.sensor2.getPos();
-
         var lineGeometry = new THREE.Geometry();
         lineGeometry.vertices.push(pos1);
         lineGeometry.vertices.push(pos2);
@@ -574,8 +707,7 @@ class SensorSimulation {
             new THREE.Vector3(40, 10, 40),
         ];
 
-        // var trajectory = new TrajectoryByPoints(points);
-        var trajectory1 = new RectangleTrajectory(points[0], points[2]);
+        var trajectory1 = new RoundedRectangleTrajectory(points[0], points[2]);
         var trajectory2 = new CircleTrajectory(
             new THREE.Vector3(30, 30, 30),
             15
@@ -590,16 +722,12 @@ class SensorSimulation {
             const id1 = this.flyingSensorIds[i];
             for (let j = i; j < this.flyingSensorIds.length; j++) {
                 const id2 = this.flyingSensorIds[j];
-                // var connection = new SensorsConnection(id1, id2);
                 var connection = new SensorsConnection(
                     this.sensors.get(id1),
                     this.sensors.get(id2)
                 );
-                connection.buildConnectionLine(
-                    this.sensors.get(id1).getPos(),
-                    this.sensors.get(id2).getPos()
-                );
 
+                connection.buildConnectionLine();
                 this.connections.push(connection);
             }
         }
@@ -613,10 +741,6 @@ class SensorSimulation {
             }
 
             this.connections.forEach((connection) => {
-                // connection.updateConnectionLine(
-                //     this.sensors.get(connection.id1).getPos(),
-                //     this.sensors.get(connection.id2).getPos()
-                // );
                 connection.updateConnectionLine();
             });
 
@@ -640,7 +764,10 @@ function main() {
     creatrLight();
 
     var simulation = new SensorSimulation();
-    simulation.start();
+
+    if (!params.pause) {
+        simulation.start();
+    }
 }
 
 function createPointCude(x, y, z, colorIndex) {
