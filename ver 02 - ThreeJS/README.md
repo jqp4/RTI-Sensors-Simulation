@@ -6,7 +6,7 @@
 
 ## Заметки к коду
 
-* ...
+* Slice a mesh <https://blog.promaton.com/three-steps-to-slice-a-mesh-with-threejs-a7879ed54664>
 
 ## Заметки к отчету
 

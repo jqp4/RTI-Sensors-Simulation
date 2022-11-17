@@ -63,7 +63,7 @@ class Params {
         this.fieldHeight = 40;
 
         this.radioVisibility = 15;
-        this.showAreaOfRadioVisibility = true;
+        this.showAreaOfRadioVisibility = false;
         this.showTrajectoryPoints = false;
         this.showTrajectoryLines = true;
 
@@ -534,6 +534,10 @@ class StaticSensor {
         this.position = new THREE.Vector3(x, y, z);
         this.colorIndex = 2;
         this.id = -1;
+
+        this.buildSensorObject();
+        this.buildAreaOfRadioVisibility();
+        this.updateSensorPosition();
     }
 
     setId(id) {
@@ -542,6 +546,13 @@ class StaticSensor {
 
     getPos() {
         return this.position;
+    }
+
+    updateSensorPosition() {
+        const pos = this.getPos();
+        if (params.showAreaOfRadioVisibility) {
+            this.areaOfRadioVisibility.position.set(pos.x, pos.y, pos.z);
+        }
     }
 
     buildSensorObject() {
@@ -731,6 +742,20 @@ class SensorSimulation {
                 this.connections.push(connection);
             }
         }
+
+        for (let i = 0; i < this.flyingSensorIds.length; i++) {
+            const id1 = this.flyingSensorIds[i];
+            for (let j = i; j < this.staticSensorIds.length; j++) {
+                const id2 = this.staticSensorIds[j];
+                var connection = new SensorsConnection(
+                    this.sensors.get(id1),
+                    this.sensors.get(id2)
+                );
+
+                connection.buildConnectionLine();
+                this.connections.push(connection);
+            }
+        }
     }
 
     async start() {
@@ -760,6 +785,7 @@ function clearScene() {
 
 function main() {
     createAxis();
+    createChessBoardField();
     createAxisText();
     creatrLight();
 
@@ -782,12 +808,14 @@ function createPointCude(x, y, z, colorIndex) {
 }
 
 function createCylinder(x, y, z, colorIndex) {
-    const geometry = new THREE.CylinderGeometry(3, 4, 2.5, 16);
+    const height = 2.5;
+    const geometry = new THREE.CylinderGeometry(3, 4, height, 16);
     const material = new THREE.MeshPhongMaterial({
         color: colors[colorIndex],
     });
+
     const cylinder = new THREE.Mesh(geometry, material);
-    cylinder.position.set(x, y, z);
+    cylinder.position.set(x, y + height / 2, z);
     graph.add(cylinder);
 }
 
@@ -969,23 +997,50 @@ function createAxis() {
     );
 
     // куб 0 0 0
-    // {
-    //     const cubeSize = 0.2;
-    //     const cubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
-    //     const cubeMat = new THREE.MeshPhongMaterial({ color: colors[3] });
-    //     const mesh = new THREE.Mesh(cubeGeo, cubeMat);
-    //     graph.add(mesh);
-    // }
+    {
+        const cubeSize = 0.2;
+        const cubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+        const cubeMat = new THREE.MeshPhongMaterial({ color: colors[3] });
+        const mesh = new THREE.Mesh(cubeGeo, cubeMat);
+        // graph.add(mesh);
+    }
+}
 
-    createLine(
-        new THREE.Vector3(field.width_x, 0, 0),
-        new THREE.Vector3(field.width_x, 0, field.width_z)
-    );
+function createChessBoardField() {
+    const step = 10;
+    const fontSize = 2.5;
+    const myString = "abcdefghijklmnopqrstuvwxyz";
+    const splits = myString.split("");
 
-    createLine(
-        new THREE.Vector3(0, 0, field.width_z),
-        new THREE.Vector3(field.width_x, 0, field.width_z)
-    );
+    for (let width_x = step; width_x < field.width_x; width_x += step) {
+        for (let width_z = step; width_z < field.width_z; width_z += step) {
+            // параллельно оси OZ
+            createLine(
+                new THREE.Vector3(width_x, 0, 0),
+                new THREE.Vector3(width_x, 0, width_z)
+            );
+
+            // параллельно оси OX
+            createLine(
+                new THREE.Vector3(0, 0, width_z),
+                new THREE.Vector3(width_x, 0, width_z)
+            );
+        }
+    }
+
+    for (let i = 1; i < field.width_x / step; i++) {
+        for (let j = 1; j < field.width_z / step; j++) {
+            const x = (i - 0.5) * step;
+            const z = (j - 0.5) * step;
+
+            const text = splits[i] + j;
+            const tpa = textParameters(text, fontSize);
+            const label = new THREE.TextSprite(tpa);
+
+            label.position.set(x, 0, z);
+            graph.add(label);
+        }
+    }
 }
 
 function textParameters(text, fontSize) {
