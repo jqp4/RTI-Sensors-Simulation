@@ -29,7 +29,6 @@ var colors = [
     0x70c1b3,
 ];
 
-var jsonData = JSON.parse(data);
 var resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
 var graph = new THREE.Object3D();
 scene.add(graph);
@@ -49,6 +48,236 @@ class Field {
         this.axisLength_x = width_x * c;
         this.axisLength_z = width_z * c;
         this.axisLength_y = height_y * c;
+    }
+
+    loadMap(mapData) {
+        // this.n = mapData.length;
+        // this.m = mapData[0].length;
+
+        this.n = this.width_x;
+        this.m = this.width_z;
+
+        this.points = [];
+        this.relief = new THREE.Object3D();
+
+        // создаем относительную карту высот
+        this.relativeHeightMap = this._getRelativeHeightMap(mapData);
+        console.log("Обработали значения высот до относительных");
+
+        // преобразовываем карты высот в множество точек-векторов
+        this.points = Array.from({ length: this.n }, (_, i) =>
+            Array.from(
+                { length: this.m },
+                (_, j) => new THREE.Vector3(i, this.relativeHeightMap[i][j], j)
+            )
+        );
+
+        console.log("Преобразовали значения высот в точки-вектора");
+
+        // for (var i = 0; i < n - 1; i++) {
+        //     for (var j = 0; j < m - 1; j++) {
+        //         // верхний треугольник
+        //         this.relief.add(
+        //             this._getTriangleMesh(
+        //                 this.points[i + 1][j + 1],
+        //                 this.points[i + 1][j],
+        //                 this.points[i][j]
+        //             )
+        //         );
+
+        //         // нижний треугольник
+        //         this.relief.add(
+        //             this._getTriangleMesh(
+        //                 this.points[i][j],
+        //                 this.points[i][j + 1],
+        //                 this.points[i + 1][j + 1]
+        //             )
+        //         );
+
+        //         // окантовка
+        //         this.relief.add(
+        //             this._getCellLine(
+        //                 this.points[i][j],
+        //                 this.points[i + 1][j],
+        //                 this.points[i + 1][j + 1],
+        //                 this.points[i][j + 1]
+        //             )
+        //         );
+        //     }
+        // }
+
+        for (const line in this._getRowLines()) {
+            if (Object.hasOwnProperty.call(this._getRowLines(), line)) {
+                this.relief.add(this._getRowLines()[line]);
+            }
+        }
+
+        for (const line in this._getColumnLines()) {
+            if (Object.hasOwnProperty.call(this._getColumnLines(), line)) {
+                this.relief.add(this._getColumnLines()[line]);
+            }
+        }
+
+        console.log("Создали 3D структуру ребер для отображения карты");
+        graph.add(this.relief);
+    }
+
+    _getRelativeHeightMap(mapData) {
+        const iShift = 0;
+        const jShift = 0;
+        // const k = 3; // берем каждую 3 вершину (1 из 9 в квадрате)
+
+        // const k =
+        //     Math.floor(
+        //         (Math.min(mapData.length, mapData[0].length) - Math.max(iShift, jShift)) /
+        //             Math.max(this.n, this.m)
+        //     ) - 1;
+
+        const cellLength = 1000;
+        const len = 40041440; // средняя длина окружности земли в метрах
+        const k = Math.floor((cellLength / 3) * 60 * 60 * 360 / len);
+
+        console.log(k);
+        console.log((len / 360 / 60 / 60) * 3 * k);
+
+        const getMapElement = (i, j) => mapData[iShift + i * k][jShift + j * k];
+
+        var minHight = getMapElement(0, 0);
+        var maxHight = getMapElement(0, 0);
+
+        for (var i = 0; i < this.n; i++) {
+            for (var j = 0; j < this.m; j++) {
+                const height = getMapElement(i, j);
+
+                if (height < minHight) minHight = height;
+                if (height > maxHight) maxHight = height;
+            }
+        }
+
+        const alpha = (this.height_y / (maxHight - minHight)) * 0.1;
+
+        const relativeHeightMap = Array.from({ length: this.n }, (_, i) =>
+            Array.from(
+                { length: this.m },
+                (_, j) => (getMapElement(i, j) - minHight - 10) * alpha
+                // (_, j) => getMapElement(i, j) * alpha
+            )
+        );
+
+        return relativeHeightMap;
+    }
+
+    /**
+     * получаем частоту
+     * @param {number[][]} mapData
+     */
+    // _getK(mapData)
+
+    /**
+     *
+     * @param {THREE.Vector3} v1
+     * @param {THREE.Vector3} v2
+     * @param {THREE.Vector3} v3
+     * @returns THREE.Mesh
+     */
+    _getTriangleMesh(v1, v2, v3, colorIndex = 10) {
+        // https://stackoverflow.com/questions/39398503/draw-a-basic-triangle-with-three-js
+
+        var geom = new THREE.Geometry();
+        const triangle = new THREE.Triangle(v1, v2, v3);
+        var normal = new THREE.Triangle(0, 10, 0);
+        // triangle.getNormal(normal)
+        geom.vertices.push(triangle.a);
+        geom.vertices.push(triangle.b);
+        geom.vertices.push(triangle.c);
+        geom.faces.push(
+            new THREE.Face3(0, 1, 2, normal, new THREE.Color(0xffaa00))
+        );
+
+        // const material = new THREE.MeshPhongMaterial({
+        //     color: colors[colorIndex],
+        // });
+
+        const material = new THREE.MeshBasicMaterial({
+            color: colors[3],
+            side: THREE.DoubleSide,
+        });
+
+        const mesh = new THREE.Mesh(geom, material);
+        return mesh;
+    }
+
+    /**
+     *
+     * @param {THREE.Vector3} v1
+     * @param {THREE.Vector3} v2
+     * @param {THREE.Vector3} v3
+     *  @param {THREE.Vector3} v4
+     * @returns THREE.Line
+     */
+    _getCellLine(v1, v2, v3, v4) {
+        var geometry = new THREE.Geometry();
+        geometry.vertices.push(v1);
+        geometry.vertices.push(v2);
+        geometry.vertices.push(v3);
+        geometry.vertices.push(v4);
+        geometry.vertices.push(v1);
+
+        // игнорируем диагональ
+        // geometry.vertices.push(v1);
+
+        var line = new THREE.Line(
+            geometry,
+            new THREE.LineBasicMaterial({ color: 0x000000 })
+        );
+
+        return line;
+    }
+
+    /**
+     * Создает линии по строкам
+     * @returns THREE.Line[]
+     */
+    _getRowLines() {
+        var lines = [];
+        for (var i = 0; i < this.n; i++) {
+            var geometry = new THREE.Geometry();
+            for (var j = 0; j < this.m; j++) {
+                geometry.vertices.push(this.points[i][j]);
+            }
+
+            var line = new THREE.Line(
+                geometry,
+                new THREE.LineBasicMaterial({ color: 0x000000 })
+            );
+
+            lines.push(line);
+        }
+
+        return lines;
+    }
+
+    /**
+     * Создает линии по столбцам
+     * @returns THREE.Line[]
+     */
+    _getColumnLines() {
+        var lines = [];
+        for (var j = 0; j < this.m; j++) {
+            var geometry = new THREE.Geometry();
+            for (var i = 0; i < this.n; i++) {
+                geometry.vertices.push(this.points[i][j]);
+            }
+
+            var line = new THREE.Line(
+                geometry,
+                new THREE.LineBasicMaterial({ color: 0x000000 })
+            );
+
+            lines.push(line);
+        }
+
+        return lines;
     }
 }
 
@@ -85,8 +314,9 @@ class Params {
 }
 
 var params = new Params();
-var field = new Field();
 var gui = new dat.GUI({ width: 450 });
+var field = new Field();
+field.loadMap(mapDataSRTM);
 
 function paramsLoad() {
     function update() {
@@ -139,7 +369,7 @@ function paramsLoad() {
             clock.getDelta();
         });
 
-    // gui.add(params, "pause").name("pause").onChange(update);
+    gui.add(params, "pause").name("pause").onChange(update);
 
     gui.add(params, "update");
 
@@ -237,7 +467,7 @@ class TrajectoryByPoints {
         if (params.showTrajectoryPoints) {
             for (let index = 0; index < this.points.length; index++) {
                 const point = this.points[index];
-                createPointCude(point.x, point.y, point.z, this.colorIndex);
+                createPointCube(point.x, point.y, point.z, this.colorIndex);
             }
         }
 
@@ -256,7 +486,7 @@ class TrajectoryByPoints {
     drawWaypoints() {
         for (let index = 0; index < this.waypoints.length; index++) {
             const waypoint = this.waypoints[index];
-            createPointCude(
+            createPointCube(
                 waypoint.x,
                 waypoint.y,
                 waypoint.z,
@@ -334,12 +564,12 @@ class RoundedRectangleTrajectory extends TrajectoryByPoints {
         /**
          * вектор помноженный на число
          * @param {THREE.Vector3} vector вектор
-         * @param {number} alhpa число */
-        let partOfVector = (vector, alhpa = 0.1) => {
+         * @param {number} alpha число */
+        let partOfVector = (vector, alpha = 0.1) => {
             return new THREE.Vector3(
-                vector.x * alhpa,
-                vector.y * alhpa,
-                vector.z * alhpa
+                vector.x * alpha,
+                vector.y * alpha,
+                vector.z * alpha
             );
         };
 
@@ -785,9 +1015,9 @@ function clearScene() {
 
 function main() {
     createAxis();
-    createChessBoardField();
+    // createChessBoardField();
     createAxisText();
-    creatrLight();
+    createLight();
 
     var simulation = new SensorSimulation();
 
@@ -796,7 +1026,7 @@ function main() {
     }
 }
 
-function createPointCude(x, y, z, colorIndex) {
+function createPointCube(x, y, z, colorIndex) {
     const size = 0.5;
     const geometry = new THREE.BoxGeometry(size, size, size);
     const material = new THREE.MeshPhongMaterial({
@@ -848,43 +1078,6 @@ function createOctahedron(x, y, z, colorIndex) {
     const mesh = new THREE.Mesh(octahedronGeo, octahedronMat);
     mesh.position.set(x, y, z);
     graph.add(mesh);
-}
-
-function createVertices() {
-    for (let i = 0; i < jsonData.vertices.length; i++) {
-        const element = jsonData.vertices[i];
-        // console.log(element);
-        const coords = element.coords;
-        const type = Number(element.type);
-        if (type == 1) {
-            createSphere(coords[0], coords[1], coords[2], type);
-        } else if (type == 2) {
-            createOctahedron(coords[0], coords[1], coords[2], type);
-        }
-    }
-}
-
-function createEdges() {
-    for (let i = 0; i < jsonData.edges.length; i++) {
-        const element = jsonData.edges[i];
-        const coordsSourse = element.coordsSourse;
-        const coordsTarget = element.coordsTarget;
-        const type = Number(element.type);
-        // console.log(element);
-
-        // createSphere(coords[0], coords[1], coords[2], type);
-
-        var line = new THREE.Geometry();
-        line.vertices.push(
-            new THREE.Vector3(coordsSourse[0], coordsSourse[1], coordsSourse[2])
-        );
-
-        line.vertices.push(
-            new THREE.Vector3(coordsTarget[0], coordsTarget[1], coordsTarget[2])
-        );
-
-        makeLineFromGeo(line, type);
-    }
 }
 
 function getMeshLineMaterial(colorIndex) {
@@ -1081,7 +1274,7 @@ function createAxisText() {
     graph.add(label_z);
 }
 
-function creatrLight() {
+function createLight() {
     const color = 0xffffff;
     const intensity = 1;
     const light = new THREE.DirectionalLight(color, intensity);
@@ -1092,8 +1285,8 @@ function creatrLight() {
 
     // https://www.youtube.com/watch?v=T6PhV4Hz0u4
     const ambientIntensity = 0.2;
-    const ambientlight = new THREE.AmbientLight(color, ambientIntensity);
-    graph.add(ambientlight);
+    const ambientLight = new THREE.AmbientLight(color, ambientIntensity);
+    graph.add(ambientLight);
 }
 
 onWindowResize();
